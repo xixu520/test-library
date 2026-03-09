@@ -19,6 +19,7 @@ type OCRService struct {
 // OCRResult represents the response from the Python OCR service.
 type OCRResult struct {
 	DocumentNumber string `json:"document_number"`
+	StandardName   string `json:"standard_name"`
 	PublishDate    string `json:"publish_date"`
 	EffectiveDate  string `json:"effective_date"`
 	AbolishDate    string `json:"abolish_date"`

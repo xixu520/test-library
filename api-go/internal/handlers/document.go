@@ -150,9 +150,11 @@ func (h *DocumentHandler) triggerOCR(doc *models.Document, useRemote bool) {
 		return
 	}
 
-	// 强制使用 OCR 提取到的标准号和经过判断的类型，以修正可能错误的手工输入
 	if result.DocumentNumber != "" {
 		doc.DocumentNumber = result.DocumentNumber
+	}
+	if result.StandardName != "" {
+		doc.StandardName = result.StandardName
 	}
 	doc.ExtractedText = result.ExtractedText
 	doc.OCRStatus = "completed"
@@ -299,6 +301,7 @@ func (h *DocumentHandler) GetByID(c *fiber.Ctx) error {
 // UpdateMetadata allows admin to manually edit document properties.
 type UpdateMetadataRequest struct {
 	DocumentNumber  string `json:"document_number"`
+	StandardName    string `json:"standard_name"`
 	PublishDate     string `json:"publish_date"`
 	EffectiveDate   string `json:"effective_date"`
 	AbolishDate     string `json:"abolish_date"`
@@ -325,6 +328,9 @@ func (h *DocumentHandler) UpdateMetadata(c *fiber.Ctx) error {
 
 	if req.DocumentNumber != "" {
 		doc.DocumentNumber = req.DocumentNumber
+	}
+	if req.StandardName != "" {
+		doc.StandardName = req.StandardName
 	}
 	if req.StandardType != "" {
 		doc.StandardType = req.StandardType

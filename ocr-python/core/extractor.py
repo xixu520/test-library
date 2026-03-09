@@ -30,6 +30,7 @@ class ExtractionResult:
     def __init__(
         self,
         document_number: str = "",
+        standard_name: str = "",
         publish_date: str = "",
         effective_date: str = "",
         abolish_date: str = "",
@@ -37,28 +38,30 @@ class ExtractionResult:
         error: Optional[str] = None,
     ):
         self.document_number: str = document_number
+        self.standard_name: str = standard_name
         self.publish_date: str = publish_date
         self.effective_date: str = effective_date
         self.abolish_date: str = abolish_date
         self.extracted_text: str = extracted_text
         self.error: Optional[str] = error
 
-    def to_dict(self) -> dict:
-        result = {
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
             "document_number": self.document_number,
+            "standard_name": self.standard_name,
             "publish_date": self.publish_date,
             "effective_date": self.effective_date,
             "abolish_date": self.abolish_date,
             "extracted_text": self.extracted_text,
         }
-        if self.error:
+        if self.error is not None:
             result["error"] = self.error
         return result
 
 
 # ─── 日期解析工具 ───────────────────────────────────────
 # 支持多种中文日期格式，增强容错性
-DATE_PATTERNS: list[re.Pattern] = [
+DATE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(\d{4})\s*[-年./]\s*(\d{1,2})\s*[-月./]\s*(\d{1,2})\s*[日号]?"),
     re.compile(r"(\d{4})(\d{2})(\d{2})"),  # 20230101
 ]
@@ -93,7 +96,7 @@ def extract_date_after_keyword(text: str, *keywords: str) -> str:
 
 
 # ─── 标准号提取 ───────────────────────────────────────
-STANDARD_NUMBER_PATTERNS: list[re.Pattern] = [
+STANDARD_NUMBER_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(GB/T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
     re.compile(r"(GB\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
     re.compile(r"(JGJ/T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
@@ -108,8 +111,8 @@ STANDARD_NUMBER_PATTERNS: list[re.Pattern] = [
 ]
 
 
-def extract_standard_number(text: str) -> str:
-    """从文本中提取标准号，并尝试提取中文名称，组装为 '标准号《名称》' 格式。"""
+def extract_standard_number(text: str) -> tuple[str, str]:
+    """从文本中提取标准号，并尝试提取中文名称，返回 (标准号, 标准名称)。"""
     for pattern in STANDARD_NUMBER_PATTERNS:
         match = pattern.search(text)
         if match:
@@ -120,17 +123,31 @@ def extract_standard_number(text: str) -> str:
             std_num = re.sub(r'^JG[-\s]T', 'JG/T', std_num, flags=re.IGNORECASE)
             
             # 尝试在标准号之后的几行内寻找中文标准名称
-            lines = text[match.end():].split('\n')
+            suffix = text[match.end(1):]
+            lines = suffix.split('\n')
             for line in lines[:15]:
                 # 排除带有系统性说明的常见干扰词、出版机构名称和备案号等
                 # 增加对“发 布”中间带空格的处理，以及常见政府部门名称的屏蔽
-                if len(line) > 2 and not re.search(r"代替|发\s*布|实\s*施|ICS|页|ISO|总目录|备案号|UDC|中华人民共和国|建设部|总局|委员会|出版社", line):
-                    # 如果该行包含中文字符，并且中文字符占据主要部分，很可能就是标准名称
+                line_str = str(line).strip()
+                if len(line_str) > 2 and not re.search(r"代替|发\s*布|实\s*施|ICS|页|ISO|总目录|备案号|UDC|中华人民共和国|建设部|总局|委员会|出版社", line_str):
+                    # 如果该行包含中文字符（允许字符间有空格），并且中文字符占据主要部分，很可能就是标准名称
                     # 避免匹配单独的一个字或者全是英文数字的行
-                    if re.search(r"[\u4e00-\u9fa5]{3,}", line):
-                        return f"{std_num}《{line}》"
-            return std_num
-    return ""
+                    # ([\u4e00-\u9fa5]\s*){3,} 匹配至少三个中文字符，字符间可有空格
+                    if re.search(r"([\u4e00-\u9fa5]\s*){3,}", line_str):
+                        # 如果是“陶 瓷 砖 胶 粘 剂”这种形式，则去掉空格，使其标准化
+                        # 但如果空格较少，可能是标准名的一部分，这里采用简单的策略：
+                        # 如果空格很多且分布均匀，则认为是为了美观加的空格，予以剔除
+                        cleaned_name = line_str
+                        if ' ' in line_str:
+                            # 统计中文字符数和空格数
+                            han_chars = re.findall(r"[\u4e00-\u9fa5]", line_str)
+                            spaces = re.findall(r"\s+", line_str)
+                            if len(spaces) >= len(han_chars) - 1 and len(han_chars) > 0:
+                                # 几乎每个字之间都有空格，说明是分散对齐
+                                cleaned_name = re.sub(r"\s+", "", line_str)
+                        return std_num, cleaned_name
+            return std_num, ""
+    return "", ""
 
 
 # ─── 核心提取函数 ─────────────────────────────────────
@@ -200,7 +217,7 @@ def extract_from_pdf(
     result.extracted_text = full_text
 
     # 提取结构化字段
-    result.document_number = extract_standard_number(full_text)
+    result.document_number, result.standard_name = extract_standard_number(full_text)
 
     # 尝试提取日期
     publish_match = re.search(r"(.{0,20})发布(?:日期)?\s*[:：]?\s*(.{0,20})", full_text)

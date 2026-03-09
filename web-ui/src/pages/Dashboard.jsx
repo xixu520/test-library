@@ -263,17 +263,19 @@ export default function Dashboard({ user, onLogout }) {
                             ) : (
                                 <table className="doc-table">
                                     <thead>
-                                        <tr>
-                                            <th>标准号</th>
-                                            <th>文件名</th>
-                                            <th>删除时间</th>
-                                            <th>操作</th>
-                                        </tr>
+                                            <tr>
+                                                <th>标准号</th>
+                                                <th>标准名称</th>
+                                                <th>文件名</th>
+                                                <th>删除时间</th>
+                                                <th>操作</th>
+                                            </tr>
                                     </thead>
                                     <tbody>
                                         {recycleBinDocs.map((doc) => (
                                             <tr key={doc.id}>
-                                                <td>{doc.document_number || doc.file_name}</td>
+                                                <td>{doc.document_number || '-'}</td>
+                                                <td>{doc.standard_name || doc.file_name}</td>
                                                 <td>{doc.file_name}</td>
                                                 <td>{formatDate(doc.deleted_at)}</td>
                                                 <td>
@@ -320,7 +322,8 @@ export default function Dashboard({ user, onLogout }) {
                                     <table className="doc-table">
                                         <thead>
                                             <tr>
-                                                <th>标准号/文件名</th>
+                                                <th>标准号</th>
+                                                <th>标准名称</th>
                                                 <th>标准类型</th>
                                                 <th>工程类型</th>
                                                 <th>发布日期</th>
@@ -335,8 +338,9 @@ export default function Dashboard({ user, onLogout }) {
                                             {documents.map((doc) => (
                                                 <tr key={doc.id}>
                                                     <td style={{ fontWeight: 500 }}>
-                                                        {doc.document_number || doc.file_name}
+                                                        {doc.document_number || '-'}
                                                     </td>
+                                                    <td>{doc.standard_name || doc.file_name}</td>
                                                     <td>{doc.standard_type}</td>
                                                     <td>{doc.engineering_type}</td>
                                                     <td>{formatDate(doc.publish_date)}</td>
@@ -527,6 +531,7 @@ function UploadModal({ standardTypes, engineeringTypes, onClose, onSuccess, onEr
 function EditModal({ doc, standardTypes, engineeringTypes, onClose, onSuccess, onError }) {
     const [form, setForm] = useState({
         document_number: doc.document_number || '',
+        standard_name: doc.standard_name || '',
         standard_type: doc.standard_type || '',
         engineering_type: doc.engineering_type || '',
         publish_date: doc.publish_date?.substring(0, 10) || '',
@@ -556,6 +561,10 @@ function EditModal({ doc, standardTypes, engineeringTypes, onClose, onSuccess, o
                 <div className="form-group">
                     <label>标准号</label>
                     <input value={form.document_number} onChange={(e) => updateField('document_number', e.target.value)} />
+                </div>
+                <div className="form-group">
+                    <label>标准名称</label>
+                    <input value={form.standard_name} onChange={(e) => updateField('standard_name', e.target.value)} />
                 </div>
                 <div className="form-group">
                     <label>标准类型</label>

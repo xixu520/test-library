@@ -25,6 +25,7 @@ type Document struct {
 	FilePath           string         `gorm:"size:1000;not null" json:"-"`
 	FileSize           int64          `json:"file_size"`
 	DocumentNumber     string         `gorm:"size:200;index" json:"document_number"`
+	StandardName       string         `gorm:"size:500" json:"standard_name"`
 	StandardType       string         `gorm:"size:50;index;not null" json:"standard_type"`
 	EngineeringType    string         `gorm:"size:50;index;not null" json:"engineering_type"`
 	PublishDate        *time.Time     `json:"publish_date"`
