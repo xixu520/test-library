@@ -1,0 +1,79 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pdf-manager-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pdfadmin
+      POSTGRES_PASSWORD: pdfSecure2024!
+      POSTGRES_DB: pdf_manager
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pdfadmin -d pdf_manager"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api-go:
+    build:
+      context: ./api-go
+      dockerfile: Dockerfile
+    container_name: pdf-manager-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: pdfadmin
+      DB_PASSWORD: pdfSecure2024!
+      DB_NAME: pdf_manager
+      JWT_SECRET: change-me-in-production-very-long-secret-key
+      OCR_SERVICE_URL: http://ocr-python:8001
+      STORAGE_PATH: /app/storage
+    ports:
+      - "8080:8080"
+    volumes:
+      - pdf_storage:/app/storage
+
+  ocr-python:
+    build:
+      context: ./ocr-python
+      dockerfile: Dockerfile
+    container_name: pdf-manager-ocr
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: pdfadmin
+      DB_PASSWORD: pdfSecure2024!
+      DB_NAME: pdf_manager
+      STORAGE_PATH: /app/storage
+    ports:
+      - "8001:8001"
+    volumes:
+      - pdf_storage:/app/storage
+
+  web-ui:
+    build:
+      context: ./web-ui
+      dockerfile: Dockerfile
+    container_name: pdf-manager-ui
+    restart: unless-stopped
+    depends_on:
+      - api-go
+    ports:
+      - "3000:80"
+
+volumes:
+  pg_data:
+  pdf_storage:

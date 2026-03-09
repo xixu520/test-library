@@ -21,36 +21,44 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+.venv/
+venv/
+env/
+.env
 
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# Virtual environments
-venv/
-.venv/
-env/
-.env/
-ENV/
-env.bak/
-venv.bak/
-
 # Go
-# Binaries for programs and plugins
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary, built with `go test -c`
 *.test
-
-# Output of the go coverage tool, specifically when used with LiteIDE
 *.out
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
 go.work
 go.work.sum
+
+# Node / React
+node_modules/
+web-ui/dist/
+web-ui/.vite/
+*.log
+
+# Docker
+.docker/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Storage (runtime data)
+storage/
