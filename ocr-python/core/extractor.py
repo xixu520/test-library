@@ -99,6 +99,8 @@ STANDARD_NUMBER_PATTERNS: list[re.Pattern] = [
     re.compile(r"(JGJ/T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
     re.compile(r"(JGJ\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
     re.compile(r"(JG/T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(JG[-\s]T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(JG\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
     re.compile(r"(JC/T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
     re.compile(r"(CJJ\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
     re.compile(r"(DB\d{2}/T?\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
@@ -114,6 +116,8 @@ def extract_standard_number(text: str) -> str:
             std_num = match.group(1).strip()
             # 兼容 OCR 可能识别出的全角横杠或汉字“一”
             std_num = std_num.replace('一', '-').replace('—', '-')
+            # 将 OCR 可能识别出的 JG-T 标准化为 JG/T
+            std_num = re.sub(r'^JG[-\s]T', 'JG/T', std_num, flags=re.IGNORECASE)
             
             # 尝试在标准号之后的几行内寻找中文标准名称
             lines = text[match.end():].split('\n')

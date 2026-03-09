@@ -347,23 +347,23 @@ export default function Dashboard({ user, onLogout }) {
                                                             {STATUS_MAP[doc.ocr_status]?.label || doc.ocr_status}
                                                         </span>
                                                         {(doc.ocr_status === 'failed' || doc.ocr_status === 'skipped') && (
-                                                            <>
-                                                                <button
-                                                                    className="btn btn-sm btn-outline"
-                                                                    style={{ marginLeft: 4, fontSize: 11, padding: '1px 6px' }}
-                                                                    onClick={() => handleRetryOcr(doc.id)}
-                                                                >
-                                                                    🔁重试
-                                                                </button>
-                                                                <button
-                                                                    className="btn btn-sm btn-outline"
-                                                                    style={{ marginLeft: 4, fontSize: 11, padding: '1px 6px' }}
-                                                                    onClick={() => handleRemoteOcr(doc.id)}
-                                                                    title="使用阿里云 OCR 进行高精度识别(仅首页)"
-                                                                >
-                                                                    🌐远程OCR
-                                                                </button>
-                                                            </>
+                                                            <button
+                                                                className="btn btn-sm btn-outline"
+                                                                style={{ marginLeft: 4, fontSize: 11, padding: '1px 6px' }}
+                                                                onClick={() => handleRetryOcr(doc.id)}
+                                                            >
+                                                                🔁重试
+                                                            </button>
+                                                        )}
+                                                        {(doc.ocr_status === 'completed' || doc.ocr_status === 'failed' || doc.ocr_status === 'skipped') && (
+                                                            <button
+                                                                className="btn btn-sm btn-outline"
+                                                                style={{ marginLeft: 4, fontSize: 11, padding: '1px 6px' }}
+                                                                onClick={() => handleRemoteOcr(doc.id)}
+                                                                title="使用阿里云 OCR 进行高精度识别(仅首页)"
+                                                            >
+                                                                🌐远程OCR
+                                                            </button>
                                                         )}
                                                     </td>
                                                     <td>
