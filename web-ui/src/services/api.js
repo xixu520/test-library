@@ -65,6 +65,8 @@ export const documentAPI = {
 export const settingsAPI = {
     getOcr: () => api.get('/settings/ocr'),
     updateOcr: (data) => api.post('/settings/ocr', data),
+    getLogs: () => api.get('/settings/logs'),
+    testOcr: () => api.post('/settings/test-ocr'),
 };
 
 // ─── Recycle Bin ─────────────────────────────────

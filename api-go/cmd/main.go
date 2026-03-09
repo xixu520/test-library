@@ -104,6 +104,8 @@ func main() {
 
 	admin.Get("/settings/ocr", settingHandler.GetOCRSettings)
 	admin.Post("/settings/ocr", settingHandler.UpdateOCRSettings)
+	admin.Get("/settings/logs", settingHandler.GetLogs)
+	admin.Post("/settings/test-ocr", settingHandler.TestOCRAPI)
 
 	// Recycle Bin routes
 	admin.Post("/recycle-bin/:id/restore", docHandler.Restore)

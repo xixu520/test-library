@@ -600,6 +600,10 @@ function SettingsModal({ onClose, onSuccess, onError }) {
     });
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [testResult, setTestResult] = useState(null); // {success, message}
+    const [testing, setTesting] = useState(false);
+    const [logs, setLogs] = useState([]);
+    const logEndRef = useState(null);
 
     useEffect(() => {
         setLoading(true);
@@ -616,6 +620,20 @@ function SettingsModal({ onClose, onSuccess, onError }) {
             .finally(() => setLoading(false));
     }, [onError]);
 
+    // 定时刷新日志
+    useEffect(() => {
+        const fetchLogs = () => {
+            settingsAPI.getLogs()
+                .then(res => {
+                    setLogs(res.data.logs || []);
+                })
+                .catch(() => { });
+        };
+        fetchLogs();
+        const timer = setInterval(fetchLogs, 3000);
+        return () => clearInterval(timer);
+    }, []);
+
     const handleSave = async () => {
         setSaving(true);
         try {
@@ -628,11 +646,24 @@ function SettingsModal({ onClose, onSuccess, onError }) {
         }
     };
 
+    const handleTestAPI = async () => {
+        setTesting(true);
+        setTestResult(null);
+        try {
+            const res = await settingsAPI.testOcr();
+            setTestResult(res.data);
+        } catch (err) {
+            setTestResult({ success: false, message: err.response?.data?.message || '测试请求失败' });
+        } finally {
+            setTesting(false);
+        }
+    };
+
     const updateField = (key, val) => setForm({ ...form, [key]: val });
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640, width: '90vw' }}>
                 <div className="modal-title">系统设置 (阿里云 OCR 配置)</div>
                 {loading ? (
                     <div style={{ padding: '20px', textAlign: 'center' }}>加载中...</div>
@@ -655,14 +686,76 @@ function SettingsModal({ onClose, onSuccess, onError }) {
                                 onChange={(e) => updateField('alibaba_access_key_secret', e.target.value)}
                             />
                         </div>
-                        <p style={{ fontSize: '12px', color: '#666', marginBottom: '16px' }}>
-                            配置后，可在文档列表中手动点击“远程OCR”按钮，调用阿里云高精度 OCR (仅扫描首页) 进行识别纠错。不配置则只使用本地引擎。
+
+                        {/* API 测试按钮 */}
+                        <div style={{ marginBottom: 12 }}>
+                            <button
+                                className="btn btn-outline btn-sm"
+                                onClick={handleTestAPI}
+                                disabled={testing}
+                                style={{ marginRight: 8 }}
+                            >
+                                {testing ? '测试中...' : '🔗 测试 API 连通性'}
+                            </button>
+                            {testResult && (
+                                <span style={{
+                                    fontWeight: 600,
+                                    fontSize: 13,
+                                    color: testResult.success ? '#22c55e' : '#ef4444',
+                                }}>
+                                    {testResult.success ? '✅ ' : '❌ '}{testResult.message}
+                                </span>
+                            )}
+                        </div>
+
+                        <p style={{ fontSize: '12px', color: '#666', marginBottom: '12px' }}>
+                            配置后，可在文档列表中手动点击"远程OCR"按钮，调用阿里云高精度 OCR (仅扫描首页) 进行识别纠错。不配置则只使用本地引擎。
                         </p>
-                        <div className="form-actions">
+
+                        <div className="form-actions" style={{ marginBottom: 16 }}>
                             <button className="btn btn-outline" onClick={onClose}>取消</button>
                             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
                                 {saving ? '保存中...' : '保存配置'}
                             </button>
+                        </div>
+
+                        {/* 实时日志窗口 */}
+                        <div style={{
+                            borderTop: '1px solid #e5e7eb',
+                            paddingTop: 12,
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                <span style={{ fontWeight: 600, fontSize: 14 }}>📋 OCR 服务日志 (实时)</span>
+                                <span style={{ fontSize: 11, color: '#999' }}>每3秒自动刷新</span>
+                            </div>
+                            <div style={{
+                                background: '#1e1e2e',
+                                color: '#cdd6f4',
+                                borderRadius: 8,
+                                padding: '10px 12px',
+                                maxHeight: 220,
+                                overflowY: 'auto',
+                                fontFamily: "'Consolas', 'Monaco', monospace",
+                                fontSize: 12,
+                                lineHeight: '1.6',
+                            }}>
+                                {logs.length === 0 ? (
+                                    <div style={{ color: '#6c7086' }}>暂无日志...</div>
+                                ) : (
+                                    logs.map((log, i) => (
+                                        <div key={i} style={{ wordBreak: 'break-all' }}>
+                                            <span style={{ color: '#7f849c' }}>[{log.time}]</span>{' '}
+                                            <span style={{
+                                                color: log.level === 'ERROR' ? '#f38ba8' :
+                                                    log.level === 'WARNING' ? '#fab387' : '#a6e3a1',
+                                            }}>
+                                                [{log.level}]
+                                            </span>{' '}
+                                            {log.message}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
                         </div>
                     </>
                 )}
@@ -670,3 +763,4 @@ function SettingsModal({ onClose, onSuccess, onError }) {
         </div>
     );
 }
+

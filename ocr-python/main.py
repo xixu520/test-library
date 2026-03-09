@@ -7,8 +7,10 @@ import logging
 import os
 import shutil
 import tempfile
+import collections
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+from datetime import datetime
 
 from fastapi import BackgroundTasks, FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,10 +20,33 @@ from core.extractor import extract_from_pdf
 from core.verifier import verify_document
 
 # ─── 日志配置 ─────────────────────────────────────────
+# 内存日志缓冲区，供前端实时查看
+LOG_BUFFER = collections.deque(maxlen=200)
+
+
+class BufferingHandler(logging.Handler):
+    """将日志写入内存缓冲区。"""
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            LOG_BUFFER.append({
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "level": record.levelname,
+                "message": msg,
+            })
+        except Exception:
+            pass
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+# 添加内存 handler
+buf_handler = BufferingHandler()
+buf_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+logging.getLogger().addHandler(buf_handler)
+
 logger = logging.getLogger(__name__)
 
 # ─── 存储路径 ─────────────────────────────────────────
@@ -74,6 +99,61 @@ async def health_check() -> HealthResponse:
     return HealthResponse(status="ok", service="ocr-python")
 
 
+@app.get("/api/logs")
+async def get_logs():
+    """返回最近的日志条目供前端实时显示。"""
+    return {"logs": list(LOG_BUFFER)}
+
+
+@app.post("/api/ocr/test")
+async def test_ocr_api(
+    alibaba_access_key_id: str = Form(""),
+    alibaba_access_key_secret: str = Form(""),
+    alibaba_endpoint: str = Form("ocr-api.cn-hangzhou.aliyuncs.com"),
+):
+    """测试阿里云 OCR API 连通性。"""
+    if not alibaba_access_key_id or not alibaba_access_key_secret:
+        logger.warning("API 连通测试失败: 未提供 Access Key ID 或 Access Key Secret")
+        return {"success": False, "message": "未提供 Access Key ID 或 Access Key Secret"}
+
+    try:
+        from core.alibaba_ocr import create_client
+        client = create_client(alibaba_access_key_id, alibaba_access_key_secret, alibaba_endpoint)
+        # 尝试一次简单的空请求来验证认证是否有效
+        # 我们通过创建客户端并发送一个最小请求来检测
+        logger.info("正在测试阿里云 OCR API 连通性 (endpoint=%s)...", alibaba_endpoint)
+
+        # 创建一个最小的白色 1x1 PNG 图片用于测试
+        import io
+        from PIL import Image as PILImage
+        img = PILImage.new('RGB', (10, 10), color='white')
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        test_bytes = buf.getvalue()
+
+        from alibabacloud_ocr_api20210707 import models as ocr_models
+        from alibabacloud_tea_util import models as util_models
+        request = ocr_models.RecognizeAdvancedRequest(body=test_bytes)
+        runtime = util_models.RuntimeOptions()
+        response = client.recognize_advanced_with_options(request, runtime)
+
+        logger.info("阿里云 OCR API 连通测试成功！")
+        return {"success": True, "message": "API 连通正常，认证成功"}
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error("阿里云 OCR API 连通测试失败: %s", error_msg)
+        # 提取关键错误信息
+        if "InvalidAccessKeyId" in error_msg:
+            return {"success": False, "message": "Access Key ID 无效，请检查"}
+        elif "SignatureDoesNotMatch" in error_msg:
+            return {"success": False, "message": "Access Key Secret 不正确，签名不匹配"}
+        elif "Forbidden" in error_msg:
+            return {"success": False, "message": "权限不足，请确认已开通 OCR 服务"}
+        else:
+            return {"success": False, "message": f"连接失败: {error_msg[:200]}"}
+
+
 @app.post("/api/ocr/extract")
 async def extract_text(
     file: UploadFile = File(...),
@@ -113,12 +193,12 @@ async def extract_text(
 
         logger.info(
             "提取完成: 标准号=%s, 发布=%s, 实施=%s",
-            result.document_number,
-            result.publish_date,
-            result.effective_date,
+            result.get("document_number", ""),
+            result.get("publish_date", ""),
+            result.get("effective_date", ""),
         )
 
-        return result.to_dict()
+        return result
 
     except Exception as e:
         logger.error("文件处理异常: %s", e)
