@@ -40,24 +40,31 @@ export default function PDFViewer({ url, title, onClose }) {
     useEffect(() => {
         if (!url) return;
 
+        let isMounted = true;
+        let pdfDoc = null;
+
         const loadPDF = async () => {
             try {
                 setLoading(true);
                 const token = localStorage.getItem('token');
 
-                const pdf = await pdfjsLib.getDocument({
+                pdfDoc = await pdfjsLib.getDocument({
                     url,
                     httpHeaders: token ? { Authorization: `Bearer ${token}` } : {},
                 }).promise;
 
-                setPageCount(pdf.numPages);
+                if (!isMounted) return;
+
+                setPageCount(pdfDoc.numPages);
                 const container = containerRef.current;
                 if (!container) return;
                 container.innerHTML = '';
 
                 // 逐页渲染到 Canvas
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    const page = await pdf.getPage(i);
+                for (let i = 1; i <= pdfDoc.numPages; i++) {
+                    if (!isMounted) break; // 如果组件已卸载，中途停止渲染
+
+                    const page = await pdfDoc.getPage(i);
                     const viewport = page.getViewport({ scale: 1.2 });
 
                     const canvas = document.createElement('canvas');
@@ -65,19 +72,29 @@ export default function PDFViewer({ url, title, onClose }) {
                     canvas.height = viewport.height;
                     canvas.style.userSelect = 'none';
                     canvas.style.pointerEvents = 'none';
+
+                    if (!isMounted) break;
                     container.appendChild(canvas);
 
                     const ctx = canvas.getContext('2d');
                     await page.render({ canvasContext: ctx, viewport }).promise;
                 }
             } catch (err) {
-                console.error('PDF 加载失败:', err);
+                if (isMounted) console.error('PDF 加载失败:', err);
             } finally {
-                setLoading(false);
+                if (isMounted) setLoading(false);
             }
         };
 
         loadPDF();
+
+        return () => {
+            isMounted = false;
+            // 清理 PDF 示例，释放内存
+            if (pdfDoc) {
+                pdfDoc.destroy().catch(console.error);
+            }
+        };
     }, [url]);
 
     return (
@@ -91,8 +108,9 @@ export default function PDFViewer({ url, title, onClose }) {
                     ✕ 关闭
                 </button>
             </div>
-            <div className="pdf-viewer-canvas-container" ref={containerRef}>
-                {loading && <p style={{ color: '#aaa', paddingTop: 40 }}>正在加载文档...</p>}
+            <div className="pdf-viewer-canvas-container">
+                {loading && <p style={{ color: '#aaa', paddingTop: 40, textAlign: 'center' }}>正在加载文档...</p>}
+                <div ref={containerRef} className="pdf-render-target" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', padding: '20px' }}></div>
             </div>
         </div>
     );

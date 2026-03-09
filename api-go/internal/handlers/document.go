@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -256,11 +255,11 @@ func (h *DocumentHandler) GetByID(c *fiber.Ctx) error {
 
 // UpdateMetadata allows admin to manually edit document properties.
 type UpdateMetadataRequest struct {
-	DocumentNumber string `json:"document_number"`
-	PublishDate    string `json:"publish_date"`
-	EffectiveDate  string `json:"effective_date"`
-	AbolishDate    string `json:"abolish_date"`
-	StandardType   string `json:"standard_type"`
+	DocumentNumber  string `json:"document_number"`
+	PublishDate     string `json:"publish_date"`
+	EffectiveDate   string `json:"effective_date"`
+	AbolishDate     string `json:"abolish_date"`
+	StandardType    string `json:"standard_type"`
 	EngineeringType string `json:"engineering_type"`
 }
 
@@ -386,22 +385,13 @@ func (h *DocumentHandler) PreviewPDF(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "文档未找到"})
 	}
 
-	f, err := os.Open(doc.FilePath)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "文件读取失败"})
-	}
-	defer f.Close()
-
-	stat, _ := f.Stat()
-
-	// Set headers to prevent download behavior
+	// Use SendFile to handle streaming and HTTP Range requests automatically
 	c.Set("Content-Type", "application/pdf")
-	c.Set("Content-Disposition", "inline") // Force inline, no attachment
-	c.Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
+	c.Set("Content-Disposition", "inline")
 	c.Set("X-Content-Type-Options", "nosniff")
 	c.Set("Cache-Control", "no-store, no-cache, must-revalidate")
 
-	return c.SendStream(f, int(stat.Size()))
+	return c.SendFile(doc.FilePath)
 }
 
 // GetCategories returns the available classification options.

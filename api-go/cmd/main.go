@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -41,6 +42,9 @@ func main() {
 		log.Fatalf("存储目录创建失败: %v", err)
 	}
 
+	// Seed admin user if configured
+	seedAdmin(db, cfg)
+
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(db)
 	docRepo := repository.NewDocumentRepository(db)
@@ -67,6 +71,11 @@ func main() {
 		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 		AllowMethods: "GET, POST, PUT, DELETE, OPTIONS",
 	}))
+
+	// Health check (for Docker)
+	app.Get("/health", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{"status": "ok", "service": "api-go"})
+	})
 
 	// Public routes
 	api := app.Group("/api")
@@ -102,4 +111,38 @@ func main() {
 
 	log.Println("正在关闭服务...")
 	app.Shutdown()
+}
+
+// seedAdmin creates or updates the admin user based on environment variables.
+func seedAdmin(db *gorm.DB, cfg *config.Config) {
+	if cfg.AdminUsername == "" || cfg.AdminPassword == "" {
+		log.Println("未配置管理员账号，跳过管理员初始化")
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(cfg.AdminPassword), bcrypt.DefaultCost)
+	if err != nil {
+		log.Fatalf("管理员密码加密失败: %v", err)
+	}
+
+	var user models.User
+	result := db.Where("username = ?", cfg.AdminUsername).First(&user)
+	if result.Error != nil {
+		// User doesn't exist, create it
+		user = models.User{
+			Username: cfg.AdminUsername,
+			Password: string(hash),
+			Role:     "admin",
+		}
+		if err := db.Create(&user).Error; err != nil {
+			log.Fatalf("管理员账号创建失败: %v", err)
+		}
+		log.Printf("管理员账号 [%s] 创建成功", cfg.AdminUsername)
+	} else {
+		// User exists, update password and role
+		user.Password = string(hash)
+		user.Role = "admin"
+		db.Save(&user)
+		log.Printf("管理员账号 [%s] 已更新", cfg.AdminUsername)
+	}
 }

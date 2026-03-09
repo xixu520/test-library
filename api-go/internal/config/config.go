@@ -16,6 +16,8 @@ type Config struct {
 	OCRServiceURL string
 	StoragePath   string
 	ServerPort    string
+	AdminUsername string
+	AdminPassword string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -30,6 +32,8 @@ func Load() *Config {
 		OCRServiceURL: getEnv("OCR_SERVICE_URL", "http://localhost:8001"),
 		StoragePath:   getEnv("STORAGE_PATH", "./storage"),
 		ServerPort:    getEnv("SERVER_PORT", "8080"),
+		AdminUsername: getEnv("ADMIN_USERNAME", ""),
+		AdminPassword: getEnv("ADMIN_PASSWORD", ""),
 	}
 }
 
