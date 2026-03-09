@@ -1,0 +1,39 @@
+name: Docker Build and Push
+
+# 触发条件：当代码推送到 main 分支，或者创建了以 v 开头的 tag（如 v1.0）
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ 'v*.*.*' ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 登录到 Docker Hub
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 3. 设置 Docker Buildx (支持多平台构建)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 4. 构建并推送镜像
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          # 这里的命名规则：用户名/仓库名:标签
+          # 自动打上 latest 标签和对应的 Git Tag 标签
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/your-repo-name:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/your-repo-name:${{ github.sha }}
