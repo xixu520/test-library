@@ -129,11 +129,11 @@ async def test_ocr_api(
         img = PILImage.new('RGB', (10, 10), color='white')
         buf = io.BytesIO()
         img.save(buf, format='PNG')
-        test_bytes = buf.getvalue()
+        buf.seek(0) # Reset stream position before sending
 
         from alibabacloud_ocr_api20210707 import models as ocr_models
         from alibabacloud_tea_util import models as util_models
-        request = ocr_models.RecognizeAdvancedRequest(body=test_bytes)
+        request = ocr_models.RecognizeAdvancedRequest(body=buf)
         runtime = util_models.RuntimeOptions()
         response = client.recognize_advanced_with_options(request, runtime)
 

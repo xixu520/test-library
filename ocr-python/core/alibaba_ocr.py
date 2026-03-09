@@ -22,13 +22,11 @@ def recognize_pdf_alibaba(image_path: str, ak_id: str, ak_secret: str, endpoint:
     client = create_client(ak_id, ak_secret, endpoint)
     
     with open(image_path, 'rb') as f:
-        file_bytes = f.read()
-
-    request = ocr_api_20210707_models.RecognizeAdvancedRequest(
-        body=file_bytes
-    )
-    
-    runtime = util_models.RuntimeOptions()
+        request = ocr_api_20210707_models.RecognizeAdvancedRequest(
+            body=f
+        )
+        
+        runtime = util_models.RuntimeOptions()
 
     try:
         response = client.recognize_advanced_with_options(request, runtime)
