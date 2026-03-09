@@ -22,11 +22,17 @@ def recognize_pdf_alibaba(image_path: str, ak_id: str, ak_secret: str, endpoint:
     client = create_client(ak_id, ak_secret, endpoint)
     
     with open(image_path, 'rb') as f:
-        request = ocr_api_20210707_models.RecognizeAdvancedRequest(
-            body=f
-        )
-        
-        runtime = util_models.RuntimeOptions()
+        file_bytes = f.read()
+
+    # The SDK calculates signature correctly on io.BytesIO streams, 
+    # but sometimes fails computing on direct file object handles.
+    buf = io.BytesIO(file_bytes)
+    
+    request = ocr_api_20210707_models.RecognizeAdvancedRequest(
+        body=buf
+    )
+    
+    runtime = util_models.RuntimeOptions()
 
     try:
         response = client.recognize_advanced_with_options(request, runtime)
