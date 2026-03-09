@@ -7,12 +7,20 @@ PDF 文本提取与 OCR 识别模块。
 import re
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
+import os
 
 import pdfplumber
 import pytesseract
 from PIL import Image
 
+# Import our alibaba integration (we will create this shortly)
+try:
+    from core.alibaba_ocr import recognize_pdf_alibaba
+except ImportError:
+    recognize_pdf_alibaba = None
+
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -69,88 +77,140 @@ def parse_date_flexible(text: str) -> str:
                 continue
     return ""
 
+def extract_date_after_keyword(text: str, *keywords: str) -> str:
+    """
+    从文本中寻找指定关键词，并在其附近提取日期。
+    支持 "关键词: 日期" 或 "日期 关键词" 两种排布形式。
+    """
+    for keyword in keywords:
+        # 扩大范围匹配前后 20 个字符寻找日期
+        match = re.search(rf"(.{{0,20}}){re.escape(keyword)}\s*[:：]?\s*(.{{0,20}})", text)
+        if match:
+            # 匹配上下文：合并前后捕获组交给日期解析工具
+            context = f"{match.group(1)} {match.group(2)}"
+            return context
+    return ""
+
 
 # ─── 标准号提取 ───────────────────────────────────────
 STANDARD_NUMBER_PATTERNS: list[re.Pattern] = [
-    re.compile(r"(GB/T\s*\d+[\.\-]?\d*\s*[-—]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(GB\s*\d+[\.\-]?\d*\s*[-—]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(JGJ\s*\d+[\.\-]?\d*\s*[-—]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(JG/T\s*\d+[\.\-]?\d*\s*[-—]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(CJJ\s*\d+[\.\-]?\d*\s*[-—]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(DB\d{2}/T?\s*\d+[\.\-]?\d*\s*[-—]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(T/\w+\s*\d+[\.\-]?\d*\s*[-—]\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(GB/T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(GB\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(JGJ/T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(JGJ\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(JG/T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(JC/T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(CJJ\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(DB\d{2}/T?\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(T/\w+\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
 ]
 
 
 def extract_standard_number(text: str) -> str:
-    """从文本中提取标准号。"""
+    """从文本中提取标准号，并尝试提取中文名称，组装为 '标准号《名称》' 格式。"""
     for pattern in STANDARD_NUMBER_PATTERNS:
         match = pattern.search(text)
         if match:
-            return match.group(1).strip()
+            std_num = match.group(1).strip()
+            # 兼容 OCR 可能识别出的全角横杠或汉字“一”
+            std_num = std_num.replace('一', '-').replace('—', '-')
+            
+            # 尝试在标准号之后的几行内寻找中文标准名称
+            lines = text[match.end():].split('\n')
+            for line in lines[:15]:
+                # 排除带有系统性说明的常见干扰词、出版机构名称和备案号等
+                # 增加对“发 布”中间带空格的处理，以及常见政府部门名称的屏蔽
+                if len(line) > 2 and not re.search(r"代替|发\s*布|实\s*施|ICS|页|ISO|总目录|备案号|UDC|中华人民共和国|建设部|总局|委员会|出版社", line):
+                    # 如果该行包含中文字符，并且中文字符占据主要部分，很可能就是标准名称
+                    # 避免匹配单独的一个字或者全是英文数字的行
+                    if re.search(r"[\u4e00-\u9fa5]{3,}", line):
+                        return f"{std_num}《{line}》"
+            return std_num
     return ""
 
 
 # ─── 核心提取函数 ─────────────────────────────────────
-def extract_from_pdf(file_path: str) -> ExtractionResult:
+def extract_from_pdf(
+    pdf_path: str,
+    use_remote: bool = False,
+    ak_id: str = "",
+    ak_secret: str = "",
+    endpoint: str = "ocr-api.cn-hangzhou.aliyuncs.com"
+) -> dict:
     """
     从 PDF 文件提取文本和元数据。
+    当 use_remote 为 True 且提供了 ak 时，优先调用阿里云 OCR 进行第一页文档识别。
     优先使用文本层 (pdfplumber)，文本不足时启动 OCR (tesseract)。
     """
     result = ExtractionResult()
-    full_text_parts: list[str] = []
+    full_text = ""
 
     try:
-        with pdfplumber.open(file_path) as pdf:
-            for page_num, page in enumerate(pdf.pages):
+        with pdfplumber.open(pdf_path) as pdf:
+            if not pdf.pages:
+                raise ValueError("PDF 文件不包含任何页面。")
+            page = pdf.pages[0]
+
+            # ---------------------------------------------------------
+            # REMOTE ALIBABA OCR BRANCH
+            # ---------------------------------------------------------
+            if use_remote and ak_id and ak_secret and recognize_pdf_alibaba:
+                logger.info("正在使用阿里云 OCR 处理文档首页...")
+                img = page.to_image(resolution=200).original
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
+                    img.save(tmp_img, format="PNG")
+                    tmp_img_path = tmp_img.name
+                
                 try:
-                    text = page.extract_text() or ""
-
-                    # 如果文本太少，尝试 OCR
-                    if len(text.strip()) < 20:
-                        try:
-                            img = page.to_image(resolution=300)
-                            pil_image: Image.Image = img.original
-                            text = pytesseract.image_to_string(
-                                pil_image, lang="chi_sim+eng"
-                            )
-                        except Exception as ocr_err:
-                            logger.warning(
-                                "OCR 失败 (页 %d): %s", page_num + 1, ocr_err
-                            )
-
-                    full_text_parts.append(text)
-
-                    # 限制处理页数以防 OOM
-                    if page_num >= 19:
-                        logger.info("文件超过20页，截断处理")
-                        break
-
+                    full_text = recognize_pdf_alibaba(tmp_img_path, ak_id, ak_secret, endpoint)
+                    logger.info("阿里云 OCR 提取成功")
                 except Exception as page_err:
-                    logger.warning("页面 %d 处理失败: %s", page_num + 1, page_err)
-                    continue
+                    logger.warning("阿里云 OCR 处理失败: %s", page_err)
+                    # 回退到下面的本地逻辑？ 为了简单，如果失败就让 full_text 为空，后面会被拦截
+                    full_text = ""
+                finally:
+                    os.remove(tmp_img_path)
+            
+            # ---------------------------------------------------------
+            # LOCAL TESSERACT OCR BRANCH (Or Remote Fallback)
+            # ---------------------------------------------------------
+            if not full_text:
+                logger.info("正在使用本地 OCR/提取策略 处理文档首页...")
+                text_plumber = page.extract_text() or ""
+                
+                has_chinese = any('\u4e00' <= char <= '\u9fa5' for char in text_plumber)
+                if len(text_plumber.strip()) > 50 and has_chinese:
+                    full_text = text_plumber
+                else:
+                    logger.info("PDFPlumber 提取文本过少或无中文，开启本地 OCR 兜底...")
+                    img = page.to_image(resolution=300).original
+                    text_ocr = pytesseract.image_to_string(img, lang="chi_sim+eng")
+                    full_text = text_plumber + "\n" + text_ocr
 
     except Exception as e:
-        logger.error("PDF 打开失败 (%s): %s", file_path, e)
+        logger.error("PDF 打开失败 (%s): %s", pdf_path, e)
         result.error = f"PDF 文件解析失败: {str(e)}"
-        return result
+        return result.to_dict()
 
-    full_text = "\n".join(full_text_parts)
     result.extracted_text = full_text
 
     # 提取结构化字段
     result.document_number = extract_standard_number(full_text)
 
     # 尝试提取日期
-    publish_match = re.search(r"发布[日期]?\s*[:：]?\s*(.{10,20})", full_text)
-    effective_match = re.search(r"实施[日期]?\s*[:：]?\s*(.{10,20})", full_text)
-    abolish_match = re.search(r"废止[日期]?\s*[:：]?\s*(.{10,20})", full_text)
+    publish_match = re.search(r"(.{0,20})发布(?:日期)?\s*[:：]?\s*(.{0,20})", full_text)
+    effective_match = re.search(r"(.{0,20})实施(?:日期)?\s*[:：]?\s*(.{0,20})", full_text)
+    abolish_match = re.search(r"(.{0,20})废止(?:日期)?\s*[:：]?\s*(.{0,20})", full_text)
 
     if publish_match:
-        result.publish_date = parse_date_flexible(publish_match.group(1))
+        context = f"{publish_match.group(1)} {publish_match.group(2)}"
+        result.publish_date = parse_date_flexible(context)
     if effective_match:
-        result.effective_date = parse_date_flexible(effective_match.group(1))
+        context = f"{effective_match.group(1)} {effective_match.group(2)}"
+        result.effective_date = parse_date_flexible(context)
     if abolish_match:
-        result.abolish_date = parse_date_flexible(abolish_match.group(1))
+        context = f"{abolish_match.group(1)} {abolish_match.group(2)}"
+        result.abolish_date = parse_date_flexible(context)
 
-    return result
+    return result.to_dict()

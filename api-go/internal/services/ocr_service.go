@@ -37,9 +37,13 @@ func NewOCRService(baseURL string) *OCRService {
 }
 
 // ExtractText sends a PDF file to the Python OCR service for text extraction.
-func (s *OCRService) ExtractText(filePath string, fileContent io.Reader) (*OCRResult, error) {
+func (s *OCRService) ExtractText(filePath string, fileContent io.Reader, payload map[string]interface{}) (*OCRResult, error) {
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
+
+	for k, v := range payload {
+		_ = writer.WriteField(k, fmt.Sprintf("%v", v))
+	}
 
 	part, err := writer.CreateFormFile("file", filePath)
 	if err != nil {

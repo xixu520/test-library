@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { documentAPI, categoryAPI, recycleBinAPI } from '../services/api';
+import { documentAPI, categoryAPI, recycleBinAPI, settingsAPI } from '../services/api';
 import PDFViewer from '../components/PDFViewer';
 
 const STATUS_MAP = {
@@ -28,6 +28,7 @@ export default function Dashboard({ user, onLogout }) {
     const [loading, setLoading] = useState(false);
     const [showUploadModal, setShowUploadModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
+    const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [editDoc, setEditDoc] = useState(null);
     const [previewDoc, setPreviewDoc] = useState(null);
     const [showRecycleBin, setShowRecycleBin] = useState(false);
@@ -109,6 +110,58 @@ export default function Dashboard({ user, onLogout }) {
         }
     };
 
+    const handleRetryOcr = async (id) => {
+        try {
+            await documentAPI.retryOcr(id);
+            showToast('OCR 已重新触发');
+            setTimeout(() => loadDocuments(), 3000);
+        } catch {
+            showToast('重试失败', 'error');
+        }
+    };
+
+    const handleRemoteOcr = async (id) => {
+        try {
+            await documentAPI.remoteOcr(id);
+            showToast('远程 OCR 已触发');
+            setTimeout(() => loadDocuments(), 3000);
+        } catch {
+            showToast('远程 OCR 触发失败', 'error');
+        }
+    };
+
+    const handleRetryVerify = async (id) => {
+        try {
+            await documentAPI.verify(id);
+            showToast('核验已重新触发');
+            setTimeout(() => loadDocuments(), 3000);
+        } catch {
+            showToast('重试失败', 'error');
+        }
+    };
+
+    const handleHardDelete = async (id) => {
+        if (!window.confirm('此操作不可恢复！确认彻底删除此文档？')) return;
+        try {
+            await recycleBinAPI.hardDelete(id);
+            showToast('文档已彻底删除');
+            loadRecycleBin();
+        } catch {
+            showToast('彻底删除失败', 'error');
+        }
+    };
+
+    const handleEmptyTrash = async () => {
+        if (!window.confirm('确认清空回收站？所有文档将被彻底删除且不可恢复！')) return;
+        try {
+            const res = await recycleBinAPI.empty();
+            showToast(res.data.message || '回收站已清空');
+            loadRecycleBin();
+        } catch {
+            showToast('清空回收站失败', 'error');
+        }
+    };
+
     const formatDate = (dateStr) => {
         if (!dateStr) return '—';
         return dateStr.substring(0, 10);
@@ -178,6 +231,11 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
 
                     <div className="user-menu">
+                        {isAdmin && (
+                            <button className="btn btn-outline btn-sm" style={{ marginRight: 8, borderColor: 'transparent' }} onClick={() => setShowSettingsModal(true)}>
+                                ⚙️ 系统设置
+                            </button>
+                        )}
                         <button className="user-btn" onClick={onLogout}>
                             👤 {user?.username} · 退出
                         </button>
@@ -191,6 +249,11 @@ export default function Dashboard({ user, onLogout }) {
                         <>
                             <div className="toolbar">
                                 <h2 style={{ fontSize: 16, fontWeight: 600 }}>🗑️ 回收站（30天后自动清理）</h2>
+                                {recycleBinDocs.length > 0 && (
+                                    <button className="btn btn-danger btn-sm" onClick={handleEmptyTrash}>
+                                        🧹 清空回收站
+                                    </button>
+                                )}
                             </div>
                             {recycleBinDocs.length === 0 ? (
                                 <div className="empty-state">
@@ -216,6 +279,9 @@ export default function Dashboard({ user, onLogout }) {
                                                 <td>
                                                     <button className="btn btn-sm btn-primary" onClick={() => handleRestore(doc.id)}>
                                                         恢复
+                                                    </button>
+                                                    <button className="btn btn-sm btn-danger" style={{ marginLeft: 4 }} onClick={() => handleHardDelete(doc.id)}>
+                                                        彻底删除
                                                     </button>
                                                 </td>
                                             </tr>
@@ -280,11 +346,39 @@ export default function Dashboard({ user, onLogout }) {
                                                         <span className={`status-badge ${STATUS_MAP[doc.ocr_status]?.cls || 'pending'}`}>
                                                             {STATUS_MAP[doc.ocr_status]?.label || doc.ocr_status}
                                                         </span>
+                                                        {(doc.ocr_status === 'failed' || doc.ocr_status === 'skipped') && (
+                                                            <>
+                                                                <button
+                                                                    className="btn btn-sm btn-outline"
+                                                                    style={{ marginLeft: 4, fontSize: 11, padding: '1px 6px' }}
+                                                                    onClick={() => handleRetryOcr(doc.id)}
+                                                                >
+                                                                    🔁重试
+                                                                </button>
+                                                                <button
+                                                                    className="btn btn-sm btn-outline"
+                                                                    style={{ marginLeft: 4, fontSize: 11, padding: '1px 6px' }}
+                                                                    onClick={() => handleRemoteOcr(doc.id)}
+                                                                    title="使用阿里云 OCR 进行高精度识别(仅首页)"
+                                                                >
+                                                                    🌐远程OCR
+                                                                </button>
+                                                            </>
+                                                        )}
                                                     </td>
                                                     <td>
                                                         <span className={`status-badge ${STATUS_MAP[doc.verification_status]?.cls || 'pending'}`}>
                                                             {STATUS_MAP[doc.verification_status]?.label || doc.verification_status}
                                                         </span>
+                                                        {(doc.verification_status === 'failed' || doc.verification_status === 'skipped') && (
+                                                            <button
+                                                                className="btn btn-sm btn-outline"
+                                                                style={{ marginLeft: 4, fontSize: 11, padding: '1px 6px' }}
+                                                                onClick={() => handleRetryVerify(doc.id)}
+                                                            >
+                                                                🔁重试
+                                                            </button>
+                                                        )}
                                                     </td>
                                                     <td style={{ display: 'flex', gap: 4 }}>
                                                         <button
@@ -346,6 +440,15 @@ export default function Dashboard({ user, onLogout }) {
                     engineeringTypes={engineeringTypes}
                     onClose={() => { setShowEditModal(false); setEditDoc(null); }}
                     onSuccess={() => { setShowEditModal(false); setEditDoc(null); showToast('更新成功'); loadDocuments(); }}
+                    onError={(msg) => showToast(msg, 'error')}
+                />
+            )}
+
+            {/* ─── 系统设置弹窗 ─── */}
+            {showSettingsModal && (
+                <SettingsModal
+                    onClose={() => setShowSettingsModal(false)}
+                    onSuccess={() => { setShowSettingsModal(false); showToast('设置已保存'); }}
                     onError={(msg) => showToast(msg, 'error')}
                 />
             )}
@@ -484,6 +587,85 @@ function EditModal({ doc, standardTypes, engineeringTypes, onClose, onSuccess, o
                         {saving ? '保存中...' : '保存修改'}
                     </button>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+/* ─── 系统设置弹窗组件 ─── */
+function SettingsModal({ onClose, onSuccess, onError }) {
+    const [form, setForm] = useState({
+        alibaba_access_key_id: '',
+        alibaba_access_key_secret: '',
+    });
+    const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        setLoading(true);
+        settingsAPI.getOcr()
+            .then(res => {
+                setForm({
+                    alibaba_access_key_id: res.data.alibaba_access_key_id || '',
+                    alibaba_access_key_secret: res.data.alibaba_access_key_secret || '',
+                });
+            })
+            .catch(() => {
+                onError('无法加载系统设置');
+            })
+            .finally(() => setLoading(false));
+    }, [onError]);
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            await settingsAPI.updateOcr(form);
+            onSuccess();
+        } catch (err) {
+            onError(err.response?.data?.error || '设置保存失败');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const updateField = (key, val) => setForm({ ...form, [key]: val });
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-title">系统设置 (阿里云 OCR 配置)</div>
+                {loading ? (
+                    <div style={{ padding: '20px', textAlign: 'center' }}>加载中...</div>
+                ) : (
+                    <>
+                        <div className="form-group">
+                            <label>Access Key ID</label>
+                            <input
+                                placeholder="请输入阿里云 Access Key ID"
+                                value={form.alibaba_access_key_id}
+                                onChange={(e) => updateField('alibaba_access_key_id', e.target.value)}
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>Access Key Secret</label>
+                            <input
+                                type="password"
+                                placeholder="请输入阿里云 Access Key Secret"
+                                value={form.alibaba_access_key_secret}
+                                onChange={(e) => updateField('alibaba_access_key_secret', e.target.value)}
+                            />
+                        </div>
+                        <p style={{ fontSize: '12px', color: '#666', marginBottom: '16px' }}>
+                            配置后，可在文档列表中手动点击“远程OCR”按钮，调用阿里云高精度 OCR (仅扫描首页) 进行识别纠错。不配置则只使用本地引擎。
+                        </p>
+                        <div className="form-actions">
+                            <button className="btn btn-outline" onClick={onClose}>取消</button>
+                            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                                {saving ? '保存中...' : '保存配置'}
+                            </button>
+                        </div>
+                    </>
+                )}
             </div>
         </div>
     );

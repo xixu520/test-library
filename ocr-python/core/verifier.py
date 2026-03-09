@@ -81,6 +81,11 @@ def verify_document(
         return result
 
     try:
+        # 提取纯标准号用于检索 (去掉《名字》后缀)
+        search_query = document_number
+        if "《" in search_query:
+            search_query = search_query.split("《")[0].strip()
+
         # 添加随机延迟防止被封禁
         time.sleep(random.uniform(1.0, 3.0))
 
@@ -92,23 +97,30 @@ def verify_document(
             "Referer": VERIFY_BASE_URL,
         })
 
-        # 搜索标准
-        search_url = VERIFY_BASE_URL
-        search_params = {"q": document_number}
+        # 使用主站搜索接口
+        search_url = "http://www.csres.com/s.jsp"
+        
+        # 网站采用 GBK 编码接收 keyword
+        # 构建 POST 请求数据
+        form_data = {
+            "keyword": search_query.encode("gbk"),
+            "pageNum": "1"
+        }
 
-        response = session.get(
-            search_url, params=search_params, timeout=15
+        response = session.post(
+            search_url, data=form_data, timeout=15
         )
+        response.encoding = 'gbk'
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")
 
         # 尝试解析搜索结果页面
-        web_dates = _parse_dates_from_page(soup, document_number)
+        web_dates = _parse_dates_from_page(soup, search_query)
 
         if web_dates is None:
             result.status = "failed"
-            result.message = f"在 f.csres.com 未找到标准 [{document_number}] 的搜索结果"
+            result.message = f"在 csres.com 未找到标准 [{search_query}] 的搜索结果"
             return result
 
         web_publish, web_effective, web_abolish = web_dates
@@ -135,17 +147,17 @@ def verify_document(
     except requests.Timeout:
         result.status = "failed"
         result.message = "查询超时: f.csres.com 响应超时"
-        logger.error("核验超时: %s", document_number)
+        logger.error("核验超时: %s", search_query)
 
     except requests.RequestException as e:
         result.status = "failed"
         result.message = f"网络请求失败: {str(e)}"
-        logger.error("核验网络错误 (%s): %s", document_number, e)
+        logger.error("核验网络错误 (%s): %s", search_query, e)
 
     except Exception as e:
         result.status = "failed"
         result.message = f"核验过程异常: {str(e)}"
-        logger.error("核验异常 (%s): %s", document_number, e)
+        logger.error("核验异常 (%s): %s", search_query, e)
 
     return result
 
@@ -167,8 +179,11 @@ def _parse_dates_from_page(
     # 尝试在页面中查找包含标准号的结果行
     text_content = soup.get_text(separator="\n")
 
-    # 检查页面中是否包含标准号
-    if document_number.replace(" ", "") not in text_content.replace(" ", ""):
+    # 检查页面中是否包含标准号 (增加连字符一致性容忍)
+    normalized_doc_num = document_number.replace(" ", "").replace("—", "-").replace("_", "-")
+    normalized_text = text_content.replace(" ", "").replace("—", "-").replace("_", "-")
+    
+    if normalized_doc_num not in normalized_text:
         return None
 
     # 尝试提取发布日期

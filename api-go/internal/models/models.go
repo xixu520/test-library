@@ -39,6 +39,14 @@ type Document struct {
 	DeletedAt          gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
 
+// SystemSetting stores global key-value configuration flags and credentials.
+type SystemSetting struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Key       string    `gorm:"uniqueIndex;size:100;not null" json:"key"`
+	Value     string    `gorm:"type:text" json:"value"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // StandardTypes enumerates the left sidebar categories.
 var StandardTypes = []string{
 	"国家标准",

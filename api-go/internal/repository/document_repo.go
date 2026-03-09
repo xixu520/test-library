@@ -3,8 +3,9 @@ package repository
 import (
 	"time"
 
-	"gorm.io/gorm"
 	"pdf-manager/api-go/internal/models"
+
+	"gorm.io/gorm"
 )
 
 // DocumentRepository handles all database operations for documents.
@@ -104,4 +105,34 @@ func (r *DocumentRepository) Search(keyword string, page, pageSize int) ([]model
 	offset := (page - 1) * pageSize
 	err := query.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&docs).Error
 	return docs, total, err
+}
+
+// FindDeletedByID retrieves a single soft-deleted document by ID.
+func (r *DocumentRepository) FindDeletedByID(id uint) (*models.Document, error) {
+	var doc models.Document
+	err := r.db.Unscoped().Where("id = ? AND deleted_at IS NOT NULL", id).First(&doc).Error
+	return &doc, err
+}
+
+// HardDelete permanently removes a single document from the database.
+func (r *DocumentRepository) HardDelete(id uint) error {
+	return r.db.Unscoped().Delete(&models.Document{}, id).Error
+}
+
+// PurgeAll permanently deletes ALL soft-deleted documents.
+// Returns the file paths for physical file cleanup.
+func (r *DocumentRepository) PurgeAll() ([]string, error) {
+	var docs []models.Document
+	err := r.db.Unscoped().Where("deleted_at IS NOT NULL").Find(&docs).Error
+	if err != nil {
+		return nil, err
+	}
+
+	var paths []string
+	for _, doc := range docs {
+		paths = append(paths, doc.FilePath)
+	}
+
+	err = r.db.Unscoped().Where("deleted_at IS NOT NULL").Delete(&models.Document{}).Error
+	return paths, err
 }

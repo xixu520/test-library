@@ -10,7 +10,7 @@ import tempfile
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import BackgroundTasks, FastAPI, File, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -75,7 +75,13 @@ async def health_check() -> HealthResponse:
 
 
 @app.post("/api/ocr/extract")
-async def extract_text(file: UploadFile = File(...)) -> dict:
+async def extract_text(
+    file: UploadFile = File(...),
+    use_remote_api: str = Form("false"),
+    alibaba_access_key_id: str = Form(""),
+    alibaba_access_key_secret: str = Form(""),
+    alibaba_endpoint: str = Form("ocr-api.cn-hangzhou.aliyuncs.com")
+) -> dict:
     """
     接收 PDF 文件并提取文本及结构化元数据。
 
@@ -96,7 +102,14 @@ async def extract_text(file: UploadFile = File(...)) -> dict:
         logger.info("开始处理文件: %s (%d bytes)", file.filename, len(content))
 
         # 调用核心提取器
-        result = extract_from_pdf(tmp_path)
+        is_remote = (use_remote_api.lower() == "true")
+        result = extract_from_pdf(
+            tmp_path,
+            use_remote=is_remote,
+            ak_id=alibaba_access_key_id,
+            ak_secret=alibaba_access_key_secret,
+            endpoint=alibaba_endpoint
+        )
 
         logger.info(
             "提取完成: 标准号=%s, 发布=%s, 实施=%s",

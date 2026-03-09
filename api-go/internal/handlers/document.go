@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -18,21 +19,24 @@ import (
 
 // DocumentHandler handles document CRUD operations.
 type DocumentHandler struct {
-	docRepo    *repository.DocumentRepository
-	ocrService *services.OCRService
-	storePath  string
+	docRepo     *repository.DocumentRepository
+	settingRepo repository.SettingRepository
+	ocrService  *services.OCRService // Keep this for now, as triggerOCR still uses it.
+	storePath   string               // Keep this for now, as Upload still uses it.
 }
 
 // NewDocumentHandler creates a new document handler.
 func NewDocumentHandler(
 	docRepo *repository.DocumentRepository,
+	settingRepo repository.SettingRepository,
 	ocrService *services.OCRService,
 	storePath string,
 ) *DocumentHandler {
 	return &DocumentHandler{
-		docRepo:    docRepo,
-		ocrService: ocrService,
-		storePath:  storePath,
+		docRepo:     docRepo,
+		settingRepo: settingRepo,
+		ocrService:  ocrService,
+		storePath:   storePath,
 	}
 }
 
@@ -83,6 +87,7 @@ func (h *DocumentHandler) Upload(c *fiber.Ctx) error {
 	if err := c.SaveFile(file, savePath); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "文件保存失败"})
 	}
+	log.Printf("[Upload] 文件保存成功: %s", savePath)
 
 	// Create database record
 	doc := &models.Document{
@@ -98,9 +103,10 @@ func (h *DocumentHandler) Upload(c *fiber.Ctx) error {
 		os.Remove(savePath) // cleanup on failure
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "数据库写入失败"})
 	}
+	log.Printf("[Upload] 数据库记录创建成功 (ID=%d)", doc.ID)
 
 	// Trigger async OCR in background
-	go h.triggerOCR(doc)
+	go h.triggerOCR(doc, false)
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message":  "文件上传成功，OCR处理中...",
@@ -109,7 +115,24 @@ func (h *DocumentHandler) Upload(c *fiber.Ctx) error {
 }
 
 // triggerOCR calls the Python OCR service asynchronously.
-func (h *DocumentHandler) triggerOCR(doc *models.Document) {
+func (h *DocumentHandler) triggerOCR(doc *models.Document, useRemote bool) {
+	log.Printf("[OCR] 触发识别机制 (ID=%d, filePath=%s, remote=%v)", doc.ID, doc.FilePath, useRemote)
+
+	payload := map[string]interface{}{
+		"document_id":    doc.ID,
+		"file_path":      doc.FilePath,
+		"use_remote_api": useRemote,
+	}
+
+	if useRemote && h.settingRepo != nil {
+		appKey, _ := h.settingRepo.GetSetting("alibaba_access_key_id")
+		appSecret, _ := h.settingRepo.GetSetting("alibaba_access_key_secret")
+		if appKey != "" && appSecret != "" {
+			payload["alibaba_access_key_id"] = appKey
+			payload["alibaba_access_key_secret"] = appSecret
+			payload["alibaba_endpoint"] = "ocr-api.cn-hangzhou.aliyuncs.com"
+		}
+	}
 	f, err := os.Open(doc.FilePath)
 	if err != nil {
 		log.Printf("[OCR] 文件打开失败 (ID=%d): %v", doc.ID, err)
@@ -119,7 +142,7 @@ func (h *DocumentHandler) triggerOCR(doc *models.Document) {
 	}
 	defer f.Close()
 
-	result, err := h.ocrService.ExtractText(doc.FilePath, f)
+	result, err := h.ocrService.ExtractText(doc.FilePath, f, payload)
 	if err != nil {
 		log.Printf("[OCR] 提取失败 (ID=%d): %v", doc.ID, err)
 		doc.OCRStatus = "failed"
@@ -127,22 +150,42 @@ func (h *DocumentHandler) triggerOCR(doc *models.Document) {
 		return
 	}
 
-	doc.DocumentNumber = result.DocumentNumber
+	// 强制使用 OCR 提取到的标准号和经过判断的类型，以修正可能错误的手工输入
+	if result.DocumentNumber != "" {
+		doc.DocumentNumber = result.DocumentNumber
+	}
 	doc.ExtractedText = result.ExtractedText
 	doc.OCRStatus = "completed"
 
+	// 自动推断标准类型 (只要 OCR 成功找到了有效的标准号就进行判断)
+	if doc.DocumentNumber != "" {
+		docNum := strings.ToUpper(doc.DocumentNumber)
+		switch {
+		case strings.HasPrefix(docNum, "GB/T") || strings.HasPrefix(docNum, "GB "):
+			doc.StandardType = "国家标准"
+		case strings.HasPrefix(docNum, "JC/T") || strings.HasPrefix(docNum, "JC ") ||
+			strings.HasPrefix(docNum, "JG/T") || strings.HasPrefix(docNum, "JG ") ||
+			strings.HasPrefix(docNum, "JGJ") || strings.HasPrefix(docNum, "CJJ"):
+			doc.StandardType = "行业标准"
+		case strings.HasPrefix(docNum, "DB"):
+			doc.StandardType = "地方标准"
+		case strings.HasPrefix(docNum, "T/"):
+			doc.StandardType = "团体标准"
+		}
+	}
+
 	// Parse dates
-	if result.PublishDate != "" {
+	if doc.PublishDate == nil && result.PublishDate != "" {
 		if t, err := time.Parse("2006-01-02", result.PublishDate); err == nil {
 			doc.PublishDate = &t
 		}
 	}
-	if result.EffectiveDate != "" {
+	if doc.EffectiveDate == nil && result.EffectiveDate != "" {
 		if t, err := time.Parse("2006-01-02", result.EffectiveDate); err == nil {
 			doc.EffectiveDate = &t
 		}
 	}
-	if result.AbolishDate != "" {
+	if doc.AbolishDate == nil && result.AbolishDate != "" {
 		if t, err := time.Parse("2006-01-02", result.AbolishDate); err == nil {
 			doc.AbolishDate = &t
 		}
@@ -400,4 +443,106 @@ func (h *DocumentHandler) GetCategories(c *fiber.Ctx) error {
 		"standard_types":    models.StandardTypes,
 		"engineering_types": models.EngineeringTypes,
 	})
+}
+
+// RetryVerify manually re-triggers document verification.
+func (h *DocumentHandler) RetryVerify(c *fiber.Ctx) error {
+	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "无效的文档ID"})
+	}
+
+	doc, err := h.docRepo.FindByID(uint(id))
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "文档未找到"})
+	}
+
+	doc.VerificationStatus = "pending"
+	doc.VerificationLog = ""
+	h.docRepo.Update(doc)
+
+	go h.triggerVerification(doc)
+
+	return c.JSON(fiber.Map{"message": "核验已重新触发"})
+}
+
+// RetryOCR manually re-triggers document OCR text extraction.
+func (h *DocumentHandler) RetryOCR(c *fiber.Ctx) error {
+	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "无效的文档ID"})
+	}
+
+	doc, err := h.docRepo.FindByID(uint(id))
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "文档未找到"})
+	}
+
+	doc.OCRStatus = "pending"
+	// Optional: we can clear existing extracted texts/dates if needed,
+	// but keeping them until overwritten might be safer depending on business logic.
+	h.docRepo.Update(doc)
+
+	go h.triggerOCR(doc, false)
+
+	return c.JSON(fiber.Map{"message": "OCR 已重新触发"})
+}
+
+// RemoteOCR explicitly triggers remote Alibaba Cloud OCR processing on the first page.
+func (h *DocumentHandler) RemoteOCR(c *fiber.Ctx) error {
+	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "无效的文档ID"})
+	}
+
+	doc, err := h.docRepo.FindByID(uint(id))
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "文档未找到"})
+	}
+
+	doc.OCRStatus = "pending"
+	h.docRepo.Update(doc)
+
+	go h.triggerOCR(doc, true)
+
+	return c.JSON(fiber.Map{"message": "远程 OCR 已触发"})
+}
+
+// HardDelete permanently removes a soft-deleted document from database and disk.
+func (h *DocumentHandler) HardDelete(c *fiber.Ctx) error {
+	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "无效的文档ID"})
+	}
+
+	doc, err := h.docRepo.FindDeletedByID(uint(id))
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "回收站中未找到该文档"})
+	}
+
+	// Delete physical file
+	if doc.FilePath != "" {
+		os.Remove(doc.FilePath)
+	}
+
+	if err := h.docRepo.HardDelete(uint(id)); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "彻底删除失败"})
+	}
+
+	return c.JSON(fiber.Map{"message": "文档已彻底删除"})
+}
+
+// EmptyTrash permanently removes ALL soft-deleted documents.
+func (h *DocumentHandler) EmptyTrash(c *fiber.Ctx) error {
+	paths, err := h.docRepo.PurgeAll()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "清空回收站失败"})
+	}
+
+	// Delete physical files
+	for _, p := range paths {
+		os.Remove(p)
+	}
+
+	return c.JSON(fiber.Map{"message": fmt.Sprintf("已彻底删除 %d 个文档", len(paths))})
 }

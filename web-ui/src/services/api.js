@@ -53,16 +53,26 @@ export const documentAPI = {
         api.post('/documents/upload', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
         }),
-    update: (id, data) => api.put(`/documents/${id}`, data),
     delete: (id) => api.delete(`/documents/${id}`),
     search: (params) => api.get('/documents/search', { params }),
     previewUrl: (id) => `${API_BASE}/documents/${id}/preview`,
+    verify: (id) => api.post(`/documents/${id}/verify`),
+    retryOcr: (id) => api.post(`/documents/${id}/ocr`),
+    remoteOcr: (id) => api.post(`/documents/${id}/remote-ocr`),
+};
+
+// ─── Settings ────────────────────────────────────
+export const settingsAPI = {
+    getOcr: () => api.get('/settings/ocr'),
+    updateOcr: (data) => api.post('/settings/ocr', data),
 };
 
 // ─── Recycle Bin ─────────────────────────────────
 export const recycleBinAPI = {
     list: () => api.get('/recycle-bin'),
     restore: (id) => api.post(`/recycle-bin/${id}/restore`),
+    hardDelete: (id) => api.delete(`/recycle-bin/${id}/hard`),
+    empty: () => api.delete('/recycle-bin/empty'),
 };
 
 export default api;

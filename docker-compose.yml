@@ -38,8 +38,8 @@ services:
       OCR_SERVICE_URL: http://ocr-python:8001
       STORAGE_PATH: /app/storage
       SERVER_PORT: 8080
-      ADMIN_USERNAME: lihouyu001
-      ADMIN_PASSWORD: Qaz118118
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin123
     ports:
       - "8080:8080"
     volumes:

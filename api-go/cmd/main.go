@@ -33,7 +33,7 @@ func main() {
 	log.Println("数据库连接成功")
 
 	// Auto-migrate models
-	if err := db.AutoMigrate(&models.User{}, &models.Document{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Document{}, &models.SystemSetting{}); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
 
@@ -48,6 +48,7 @@ func main() {
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(db)
 	docRepo := repository.NewDocumentRepository(db)
+	settingRepo := repository.NewSettingRepository(db)
 
 	// Initialize services
 	ocrService := services.NewOCRService(cfg.OCRServiceURL)
@@ -56,7 +57,8 @@ func main() {
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(userRepo, cfg.JWTSecret)
-	docHandler := handlers.NewDocumentHandler(docRepo, ocrService, cfg.StoragePath)
+	docHandler := handlers.NewDocumentHandler(docRepo, settingRepo, ocrService, cfg.StoragePath)
+	settingHandler := handlers.NewSettingHandler(settingRepo)
 
 	// Setup Fiber app
 	app := fiber.New(fiber.Config{
@@ -90,13 +92,23 @@ func main() {
 	protected.Get("/documents/search", docHandler.Search)
 	protected.Get("/documents/:id", docHandler.GetByID)
 	protected.Get("/documents/:id/preview", docHandler.PreviewPDF)
+	protected.Post("/documents/:id/verify", docHandler.RetryVerify)
+	protected.Post("/documents/:id/ocr", docHandler.RetryOCR)
+	protected.Post("/documents/:id/remote-ocr", docHandler.RemoteOCR)
 
 	// Admin-only routes
 	admin := protected.Group("", middleware.AdminOnly())
 	admin.Put("/documents/:id", docHandler.UpdateMetadata)
 	admin.Delete("/documents/:id", docHandler.Delete)
 	admin.Get("/recycle-bin", docHandler.ListRecycleBin)
+
+	admin.Get("/settings/ocr", settingHandler.GetOCRSettings)
+	admin.Post("/settings/ocr", settingHandler.UpdateOCRSettings)
+
+	// Recycle Bin routes
 	admin.Post("/recycle-bin/:id/restore", docHandler.Restore)
+	admin.Delete("/recycle-bin/empty", docHandler.EmptyTrash)
+	admin.Delete("/recycle-bin/:id/hard", docHandler.HardDelete)
 
 	// Graceful shutdown
 	go func() {
