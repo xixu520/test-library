@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*' # Trigger on version tags (e.g., v0.01)
+  release:
+    types: [published]
 
 jobs:
   push_to_registry:
