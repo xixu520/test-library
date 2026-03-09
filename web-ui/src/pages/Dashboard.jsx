@@ -526,6 +526,7 @@ function UploadModal({ standardTypes, engineeringTypes, onClose, onSuccess, onEr
 /* ─── 编辑弹窗组件 ─── */
 function EditModal({ doc, standardTypes, engineeringTypes, onClose, onSuccess, onError }) {
     const [form, setForm] = useState({
+        file_name: doc.file_name || '',
         document_number: doc.document_number || '',
         standard_type: doc.standard_type || '',
         engineering_type: doc.engineering_type || '',
@@ -553,6 +554,10 @@ function EditModal({ doc, standardTypes, engineeringTypes, onClose, onSuccess, o
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-title">编辑文档属性</div>
+                <div className="form-group">
+                    <label>文件名</label>
+                    <input value={form.file_name} onChange={(e) => updateField('file_name', e.target.value)} />
+                </div>
                 <div className="form-group">
                     <label>标准号</label>
                     <input value={form.document_number} onChange={(e) => updateField('document_number', e.target.value)} />
