@@ -49,6 +49,7 @@ export const categoryAPI = {
 export const documentAPI = {
     list: (params) => api.get('/documents', { params }),
     getById: (id) => api.get(`/documents/${id}`),
+    update: (id, data) => api.put(`/documents/${id}`, data),
     upload: (formData) =>
         api.post('/documents/upload', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },

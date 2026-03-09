@@ -298,7 +298,6 @@ func (h *DocumentHandler) GetByID(c *fiber.Ctx) error {
 
 // UpdateMetadata allows admin to manually edit document properties.
 type UpdateMetadataRequest struct {
-	FileName        string `json:"file_name"`
 	DocumentNumber  string `json:"document_number"`
 	PublishDate     string `json:"publish_date"`
 	EffectiveDate   string `json:"effective_date"`
@@ -324,9 +323,6 @@ func (h *DocumentHandler) UpdateMetadata(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "请求参数格式错误"})
 	}
 
-	if req.FileName != "" {
-		doc.FileName = req.FileName
-	}
 	if req.DocumentNumber != "" {
 		doc.DocumentNumber = req.DocumentNumber
 	}
@@ -353,6 +349,7 @@ func (h *DocumentHandler) UpdateMetadata(c *fiber.Ctx) error {
 	}
 
 	if err := h.docRepo.Update(doc); err != nil {
+		log.Printf("[Document] 更新失败 (ID=%d): %v", doc.ID, err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "更新失败"})
 	}
 
