@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"strings"
 
 	"pdf-manager/api-go/internal/repository"
 
@@ -57,12 +58,15 @@ func (h *SettingHandler) UpdateOCRSettings(c *fiber.Ctx) error {
 	}
 
 	if body.AccessKeyID != "" {
-		h.settingRepo.SetSetting("alibaba_access_key_id", body.AccessKeyID)
+		h.settingRepo.SetSetting("alibaba_access_key_id", strings.TrimSpace(body.AccessKeyID))
 	}
 
 	// Only update secret if it's not the masked version and not empty
 	if body.AccessKeySecret != "" && body.AccessKeySecret != "******" && len(body.AccessKeySecret) > 0 {
-		h.settingRepo.SetSetting("alibaba_access_key_secret", body.AccessKeySecret)
+		// Only save unmasked secrets
+		if !strings.Contains(body.AccessKeySecret, "******") {
+			h.settingRepo.SetSetting("alibaba_access_key_secret", strings.TrimSpace(body.AccessKeySecret))
+		}
 	}
 
 	return c.JSON(fiber.Map{"message": "设置已保存"})

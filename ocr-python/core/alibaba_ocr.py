@@ -21,21 +21,14 @@ def recognize_pdf_alibaba(image_path: str, ak_id: str, ak_secret: str, endpoint:
     """
     client = create_client(ak_id, ak_secret, endpoint)
     
-    with open(image_path, 'rb') as f:
-        file_bytes = f.read()
-
-    # The SDK calculates signature correctly on io.BytesIO streams, 
-    # but sometimes fails computing on direct file object handles.
-    buf = io.BytesIO(file_bytes)
-    
-    request = ocr_api_20210707_models.RecognizeAdvancedRequest(
-        body=buf
-    )
-    
+    request = ocr_api_20210707_models.RecognizeAdvancedRequest()
     runtime = util_models.RuntimeOptions()
 
     try:
-        response = client.recognize_advanced_with_options(request, runtime)
+        with open(image_path, 'rb') as f:
+            request.body = f
+            response = client.recognize_advanced_with_options(request, runtime)
+            
         # 阿里云通用文字识别高精度版返回 JSON。 Data 字段内包含 content。
         # 不同的接口返回结构可能略有不同。若是 RecognizeAdvanced:
         # response.body.data 是包含 content 的 JSON 字符串
