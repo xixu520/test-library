@@ -11,15 +11,27 @@ import (
 	"pdf-manager/api-go/internal/repository"
 )
 
-// AuthHandler handles user registration and login.
 type AuthHandler struct {
-	userRepo  *repository.UserRepository
-	jwtSecret string
+	userRepo    *repository.UserRepository
+	settingRepo repository.SettingRepository
+	jwtSecret   string
 }
 
 // NewAuthHandler creates a new auth handler.
-func NewAuthHandler(userRepo *repository.UserRepository, jwtSecret string) *AuthHandler {
-	return &AuthHandler{userRepo: userRepo, jwtSecret: jwtSecret}
+func NewAuthHandler(userRepo *repository.UserRepository, settingRepo repository.SettingRepository, jwtSecret string) *AuthHandler {
+	return &AuthHandler{userRepo: userRepo, settingRepo: settingRepo, jwtSecret: jwtSecret}
+}
+
+// mapRoleToPermissions identifies permissions based on the role.
+func mapRoleToPermissions(role string) []string {
+	if role == "admin" {
+		return []string{
+			"document:read", "document:write", "document:delete",
+			"recycle:read", "recycle:write",
+			"system:config", "auth:manage", "register:toggle",
+		}
+	}
+	return []string{"document:read"}
 }
 
 // RegisterRequest is the request body for user registration.
@@ -37,6 +49,12 @@ type LoginRequest struct {
 
 // Register creates a new user account.
 func (h *AuthHandler) Register(c *fiber.Ctx) error {
+	// Check if registration is enabled
+	enabled, _ := h.settingRepo.GetSetting("registration_enabled")
+	if enabled == "false" {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "注册功能已关闭"})
+	}
+
 	var req RegisterRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "请求参数格式错误"})
@@ -64,6 +82,8 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	if err := h.userRepo.Create(user); err != nil {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "用户名已存在"})
 	}
+
+	user.Permissions = mapRoleToPermissions(user.Role)
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message": "注册成功",
@@ -98,8 +118,40 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "令牌生成失败"})
 	}
 
+	user.Permissions = mapRoleToPermissions(user.Role)
+
 	return c.JSON(fiber.Map{
 		"token": tokenStr,
 		"user":  user,
 	})
+}
+
+// GetRegisterStatus returns whether public registration is enabled.
+func (h *AuthHandler) GetRegisterStatus(c *fiber.Ctx) error {
+	enabled, _ := h.settingRepo.GetSetting("registration_enabled")
+	if enabled == "" {
+		enabled = "true" // Default to true
+	}
+	return c.JSON(fiber.Map{"enabled": enabled == "true"})
+}
+
+// ToggleRegisterStatus enables or disables public registration.
+func (h *AuthHandler) ToggleRegisterStatus(c *fiber.Ctx) error {
+	var body struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "无效的请求格式"})
+	}
+
+	val := "false"
+	if body.Enabled {
+		val = "true"
+	}
+
+	if err := h.settingRepo.SetSetting("registration_enabled", val); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "更新失败"})
+	}
+
+	return c.JSON(fiber.Map{"enabled": body.Enabled})
 }

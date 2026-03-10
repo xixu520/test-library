@@ -8,18 +8,24 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
  * 安全 PDF 预览组件。
  * 使用 Canvas 渲染 PDF 页面，禁止下载、打印和右键操作。
  */
-export default function PDFViewer({ url, title, onClose }) {
-    const containerRef = useRef(null);
+interface PDFViewerProps {
+    url: string;
+    title?: string;
+    onClose: () => void;
+}
+
+export default function PDFViewer({ url, title, onClose }: PDFViewerProps) {
+    const containerRef = useRef<HTMLDivElement>(null);
     const [pageCount, setPageCount] = useState(0);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         // 禁用右键菜单
-        const handleContextMenu = (e) => e.preventDefault();
+        const handleContextMenu = (e: MouseEvent) => e.preventDefault();
         document.addEventListener('contextmenu', handleContextMenu);
 
         // 禁用键盘快捷键 (Ctrl+P, Ctrl+S, Ctrl+Shift+I)
-        const handleKeyDown = (e) => {
+        const handleKeyDown = (e: KeyboardEvent) => {
             if (
                 (e.ctrlKey && (e.key === 'p' || e.key === 's' || e.key === 'P' || e.key === 'S')) ||
                 (e.ctrlKey && e.shiftKey && e.key === 'I') ||
@@ -41,7 +47,7 @@ export default function PDFViewer({ url, title, onClose }) {
         if (!url) return;
 
         let isMounted = true;
-        let pdfDoc = null;
+        let pdfDoc: any = null;
 
         const loadPDF = async () => {
             try {
@@ -77,7 +83,9 @@ export default function PDFViewer({ url, title, onClose }) {
                     container.appendChild(canvas);
 
                     const ctx = canvas.getContext('2d');
-                    await page.render({ canvasContext: ctx, viewport }).promise;
+                    if (ctx) {
+                        await page.render({ canvasContext: ctx as any, viewport }).promise;
+                    }
                 }
             } catch (err) {
                 if (isMounted) console.error('PDF 加载失败:', err);
@@ -98,19 +106,37 @@ export default function PDFViewer({ url, title, onClose }) {
     }, [url]);
 
     return (
-        <div className="pdf-viewer-overlay" onContextMenu={(e) => e.preventDefault()}>
-            <div className="pdf-viewer-toolbar">
-                <span className="title">📄 {title || '文档预览'}</span>
-                <span style={{ fontSize: 12, color: '#aaa' }}>
-                    {loading ? '加载中...' : `共 ${pageCount} 页`}
-                </span>
-                <button className="btn btn-outline" style={{ color: '#fff', borderColor: '#555' }} onClick={onClose}>
-                    ✕ 关闭
-                </button>
+        <div className="fixed inset-0 bg-gray-900/95 flex flex-col z-[3000] animate-in fade-in duration-300" onContextMenu={(e) => e.preventDefault()}>
+            <div className="h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 flex-shrink-0 shadow-xl">
+                <div className="flex items-center gap-3">
+                    <span className="text-xl">📄</span>
+                    <h3 className="text-sm font-bold text-gray-100">{title || '文档预览'}</h3>
+                </div>
+                <div className="flex items-center gap-6">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-gray-500">
+                        {loading ? (
+                            <span className="flex items-center gap-2">
+                                <span className="w-3 h-3 border-2 border-gray-600 border-t-gray-400 rounded-full animate-spin"></span>
+                                加载中
+                            </span>
+                        ) : `页面共 ${pageCount} 页`}
+                    </span>
+                    <button
+                        className="px-4 py-1.5 border border-gray-700 rounded text-xs font-bold text-gray-300 hover:bg-gray-800 hover:border-gray-500 hover:text-white transition-all uppercase tracking-tighter"
+                        onClick={onClose}
+                    >
+                        ✕ 关闭
+                    </button>
+                </div>
             </div>
-            <div className="pdf-viewer-canvas-container">
-                {loading && <p style={{ color: '#aaa', paddingTop: 40, textAlign: 'center' }}>正在加载文档...</p>}
-                <div ref={containerRef} className="pdf-render-target" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', padding: '20px' }}></div>
+            <div className="flex-1 overflow-y-auto bg-gray-800/50 p-6 flex flex-col items-center custom-scrollbar">
+                {loading && (
+                    <div className="flex flex-col items-center justify-center pt-20 animate-pulse">
+                        <div className="text-6xl mb-4 opacity-20 text-indigo-400">📂</div>
+                        <p className="text-sm font-medium text-gray-500">正在为您加载安全加密文档...</p>
+                    </div>
+                )}
+                <div ref={containerRef} className="flex flex-col items-center gap-8 py-4 selection:bg-transparent shadow-2xl"></div>
             </div>
         </div>
     );

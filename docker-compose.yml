@@ -82,6 +82,16 @@ services:
     ports:
       - "3000:80"
 
+  # 临时后台 Web 日志监控界面 (Dozzle)
+  log-viewer:
+    image: amir20/dozzle:latest
+    container_name: pdf-manager-log-viewer
+    restart: unless-stopped
+    ports:
+      - "3001:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
 volumes:
   pg_data:
   pdf_storage:

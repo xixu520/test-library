@@ -8,13 +8,14 @@ import (
 
 // User represents a registered user of the system.
 type User struct {
-	ID        uint           `gorm:"primaryKey" json:"id"`
-	Username  string         `gorm:"uniqueIndex;size:100;not null" json:"username"`
-	Password  string         `gorm:"size:255;not null" json:"-"`
-	Role      string         `gorm:"size:20;default:viewer;not null" json:"role"` // admin | editor | viewer
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	ID          uint           `gorm:"primaryKey" json:"id"`
+	Username    string         `gorm:"uniqueIndex;size:100;not null" json:"username"`
+	Password    string         `gorm:"size:255;not null" json:"-"`
+	Role        string         `gorm:"size:20;default:viewer;not null" json:"role"` // admin | editor | viewer
+	Permissions []string       `gorm:"-" json:"permissions"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // Document represents a PDF document with classification and date metadata.

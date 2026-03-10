@@ -56,7 +56,7 @@ func main() {
 	defer cleanupService.Stop()
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(userRepo, cfg.JWTSecret)
+	authHandler := handlers.NewAuthHandler(userRepo, settingRepo, cfg.JWTSecret)
 	docHandler := handlers.NewDocumentHandler(docRepo, settingRepo, ocrService, cfg.StoragePath)
 	settingHandler := handlers.NewSettingHandler(settingRepo)
 
@@ -83,6 +83,7 @@ func main() {
 	api := app.Group("/api")
 	api.Post("/auth/register", authHandler.Register)
 	api.Post("/auth/login", authHandler.Login)
+	api.Get("/auth/register/status", authHandler.GetRegisterStatus)
 	api.Get("/categories", docHandler.GetCategories)
 
 	// Protected routes (require JWT)
@@ -95,6 +96,10 @@ func main() {
 	protected.Post("/documents/:id/verify", docHandler.RetryVerify)
 	protected.Post("/documents/:id/ocr", docHandler.RetryOCR)
 	protected.Post("/documents/:id/remote-ocr", docHandler.RemoteOCR)
+	protected.Put("/auth/password", func(c *fiber.Ctx) error {
+		// Mock for now, since usage is PUT in api.ts
+		return c.JSON(fiber.Map{"message": "密码更新接口已切换为 PUT，实际逻辑请完善"})
+	})
 
 	// Admin-only routes
 	admin := protected.Group("", middleware.AdminOnly())
@@ -106,6 +111,9 @@ func main() {
 	admin.Post("/settings/ocr", settingHandler.UpdateOCRSettings)
 	admin.Get("/settings/logs", settingHandler.GetLogs)
 	admin.Post("/settings/test-ocr", settingHandler.TestOCRAPI)
+	admin.Get("/settings/baidu-ocr", settingHandler.GetOCRSettings)
+	admin.Post("/settings/baidu-ocr", settingHandler.UpdateOCRSettings)
+	admin.Put("/auth/register/status", authHandler.ToggleRegisterStatus)
 
 	// Recycle Bin routes
 	admin.Post("/recycle-bin/:id/restore", docHandler.Restore)

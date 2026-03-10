@@ -9,6 +9,7 @@
         "preview": "vite preview"
     },
     "dependencies": {
+        "@tanstack/react-virtual": "^3.13.21",
         "axios": "^1.7.9",
         "pdfjs-dist": "^4.9.155",
         "react": "^18.3.1",
@@ -16,9 +17,15 @@
         "react-router-dom": "^7.1.1"
     },
     "devDependencies": {
-        "@types/react": "^18.3.18",
-        "@types/react-dom": "^18.3.5",
+        "@tailwindcss/postcss": "^4.2.1",
+        "@types/node": "^25.4.0",
+        "@types/react": "^18.3.28",
+        "@types/react-dom": "^18.3.7",
         "@vitejs/plugin-react": "^4.3.4",
+        "autoprefixer": "^10.4.27",
+        "postcss": "^8.5.8",
+        "tailwindcss": "^4.2.1",
+        "typescript": "^5.9.3",
         "vite": "^6.0.5"
     }
 }
