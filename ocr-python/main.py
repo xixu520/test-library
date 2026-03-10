@@ -107,60 +107,38 @@ async def get_logs():
 
 @app.post("/api/ocr/test")
 async def test_ocr_api(
-    alibaba_access_key_id: str = Form(""),
-    alibaba_access_key_secret: str = Form(""),
-    alibaba_endpoint: str = Form("ocr-api.cn-hangzhou.aliyuncs.com"),
+    baidu_api_key: str = Form(""),
+    baidu_secret_key: str = Form("")
 ):
-    """测试阿里云 OCR API 连通性。"""
-    if not alibaba_access_key_id or not alibaba_access_key_secret:
-        logger.warning("API 连通测试失败: 未提供 Access Key ID 或 Access Key Secret")
-        return {"success": False, "message": "未提供 Access Key ID 或 Access Key Secret"}
+    """测试百度云 OCR API 连通性。"""
+    if not baidu_api_key or not baidu_secret_key:
+        logger.warning("API 连通测试失败: 未提供 API Key 或 Secret Key")
+        return {"success": False, "message": "未提供 API Key 或 Secret Key"}
 
     try:
-        from core.alibaba_ocr import create_client
-        client = create_client(alibaba_access_key_id, alibaba_access_key_secret, alibaba_endpoint)
-        # 尝试一次简单的空请求来验证认证是否有效
-        # 我们通过创建客户端并发送一个最小请求来检测
-        logger.info("正在测试阿里云 OCR API 连通性 (endpoint=%s)...", alibaba_endpoint)
-
-        # 创建一个最小的白色 1x1 PNG 图片用于测试
-        import io
-        from PIL import Image as PILImage
-        img = PILImage.new('RGB', (10, 10), color='white')
-        buf = io.BytesIO()
-        img.save(buf, format='PNG')
-        buf.seek(0) # Reset stream position before sending
-
-        from alibabacloud_ocr_api20210707 import models as ocr_models
-        from alibabacloud_tea_util import models as util_models
-        request = ocr_models.RecognizeAdvancedRequest(body=buf)
-        runtime = util_models.RuntimeOptions()
-        response = client.recognize_advanced_with_options(request, runtime)
-
-        logger.info("阿里云 OCR API 连通测试成功！")
-        return {"success": True, "message": "API 连通正常，认证成功"}
+        from core.baidu_ocr import get_access_token
+        # 尝试进行一次简单的 OAuth 认证请求，如果不抛出异常且拿到 token 说明连通性 OK
+        logger.info("正在测试百度云 OCR API 连通性...")
+        token = get_access_token(baidu_api_key, baidu_secret_key)
+        
+        if token:
+            logger.info("百度云 OCR API 连通测试成功！")
+            return {"success": True, "message": "API 连通正常，认证成功"}
+        else:
+            return {"success": False, "message": "获取 Access Token 失败"}
 
     except Exception as e:
         error_msg = str(e)
-        logger.error("阿里云 OCR API 连通测试失败: %s", error_msg)
-        # 提取关键错误信息
-        if "InvalidAccessKeyId" in error_msg:
-            return {"success": False, "message": "Access Key ID 无效，请检查"}
-        elif "SignatureDoesNotMatch" in error_msg:
-            return {"success": False, "message": "Access Key Secret 不正确，签名不匹配"}
-        elif "Forbidden" in error_msg:
-            return {"success": False, "message": "权限不足，请确认已开通 OCR 服务"}
-        else:
-            return {"success": False, "message": f"连接失败: {error_msg[:200]}"}
+        logger.error("百度云 OCR API 连通测试失败: %s", error_msg)
+        return {"success": False, "message": f"连接失败: {error_msg[:200]}"}
 
 
 @app.post("/api/ocr/extract")
 async def extract_text(
     file: UploadFile = File(...),
     use_remote_api: str = Form("false"),
-    alibaba_access_key_id: str = Form(""),
-    alibaba_access_key_secret: str = Form(""),
-    alibaba_endpoint: str = Form("ocr-api.cn-hangzhou.aliyuncs.com")
+    baidu_api_key: str = Form(""),
+    baidu_secret_key: str = Form("")
 ) -> dict:
     """
     接收 PDF 文件并提取文本及结构化元数据。
@@ -186,9 +164,8 @@ async def extract_text(
         result = extract_from_pdf(
             tmp_path,
             use_remote=is_remote,
-            ak_id=alibaba_access_key_id,
-            ak_secret=alibaba_access_key_secret,
-            endpoint=alibaba_endpoint
+            ak_id=baidu_api_key,
+            ak_secret=baidu_secret_key
         )
 
         logger.info(

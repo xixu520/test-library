@@ -125,12 +125,11 @@ func (h *DocumentHandler) triggerOCR(doc *models.Document, useRemote bool) {
 	}
 
 	if useRemote && h.settingRepo != nil {
-		appKey, _ := h.settingRepo.GetSetting("alibaba_access_key_id")
-		appSecret, _ := h.settingRepo.GetSetting("alibaba_access_key_secret")
+		appKey, _ := h.settingRepo.GetSetting("baidu_api_key")
+		appSecret, _ := h.settingRepo.GetSetting("baidu_secret_key")
 		if appKey != "" && appSecret != "" {
-			payload["alibaba_access_key_id"] = appKey
-			payload["alibaba_access_key_secret"] = appSecret
-			payload["alibaba_endpoint"] = "ocr-api.cn-hangzhou.aliyuncs.com"
+			payload["baidu_api_key"] = appKey
+			payload["baidu_secret_key"] = appSecret
 		}
 	}
 	f, err := os.Open(doc.FilePath)
@@ -163,16 +162,18 @@ func (h *DocumentHandler) triggerOCR(doc *models.Document, useRemote bool) {
 	if doc.DocumentNumber != "" {
 		docNum := strings.ToUpper(doc.DocumentNumber)
 		switch {
-		case strings.HasPrefix(docNum, "GB/T") || strings.HasPrefix(docNum, "GB "):
+		case strings.HasPrefix(docNum, "GB"):
 			doc.StandardType = "国家标准"
-		case strings.HasPrefix(docNum, "JC/T") || strings.HasPrefix(docNum, "JC ") ||
-			strings.HasPrefix(docNum, "JG/T") || strings.HasPrefix(docNum, "JG ") ||
-			strings.HasPrefix(docNum, "JGJ") || strings.HasPrefix(docNum, "CJJ"):
+		case strings.HasPrefix(docNum, "JGJ") || strings.HasPrefix(docNum, "CJJ") ||
+			strings.HasPrefix(docNum, "JC") || strings.HasPrefix(docNum, "JT") ||
+			strings.HasPrefix(docNum, "DB"):
 			doc.StandardType = "行业标准"
-		case strings.HasPrefix(docNum, "DB"):
-			doc.StandardType = "地方标准"
-		case strings.HasPrefix(docNum, "T/"):
+		case strings.HasPrefix(docNum, "T/CECS") || strings.HasPrefix(docNum, "T/CCSA") ||
+			strings.HasPrefix(docNum, "T/CBMF") || strings.HasPrefix(docNum, "CECS") ||
+			strings.HasPrefix(docNum, "CCSA") || strings.HasPrefix(docNum, "CBMF"):
 			doc.StandardType = "团体标准"
+		default:
+			doc.StandardType = "其他"
 		}
 	}
 

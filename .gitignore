@@ -63,3 +63,7 @@ Thumbs.db
 # Storage (runtime data)
 storage/
 development_log.md
+
+# Local API Tokens
+APITOKEN.md
+

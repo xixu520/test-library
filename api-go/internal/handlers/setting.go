@@ -23,15 +23,15 @@ func NewSettingHandler(repo repository.SettingRepository) *SettingHandler {
 	return &SettingHandler{settingRepo: repo}
 }
 
-// GetOCRSettings returns the current Alibaba OCR settings (hiding the secret).
+// GetOCRSettings returns the current Baidu OCR settings (hiding the secret).
 func (h *SettingHandler) GetOCRSettings(c *fiber.Ctx) error {
 	settings, err := h.settingRepo.GetAll()
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "无法获取设置"})
 	}
 
-	appKey := settings["alibaba_access_key_id"]
-	appSecret := settings["alibaba_access_key_secret"]
+	appKey := settings["baidu_api_key"]
+	appSecret := settings["baidu_secret_key"]
 
 	// Mask secret for frontend viewing
 	if len(appSecret) > 4 {
@@ -41,16 +41,16 @@ func (h *SettingHandler) GetOCRSettings(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"alibaba_access_key_id":     appKey,
-		"alibaba_access_key_secret": appSecret,
+		"baidu_api_key":    appKey,
+		"baidu_secret_key": appSecret,
 	})
 }
 
-// UpdateOCRSettings saves the new Alibaba OCR settings.
+// UpdateOCRSettings saves the new Baidu OCR settings.
 func (h *SettingHandler) UpdateOCRSettings(c *fiber.Ctx) error {
 	var body struct {
-		AccessKeyID     string `json:"alibaba_access_key_id"`
-		AccessKeySecret string `json:"alibaba_access_key_secret"`
+		AccessKeyID     string `json:"baidu_api_key"`
+		AccessKeySecret string `json:"baidu_secret_key"`
 	}
 
 	if err := c.BodyParser(&body); err != nil {
@@ -58,14 +58,14 @@ func (h *SettingHandler) UpdateOCRSettings(c *fiber.Ctx) error {
 	}
 
 	if body.AccessKeyID != "" {
-		h.settingRepo.SetSetting("alibaba_access_key_id", strings.TrimSpace(body.AccessKeyID))
+		h.settingRepo.SetSetting("baidu_api_key", strings.TrimSpace(body.AccessKeyID))
 	}
 
 	// Only update secret if it's not the masked version and not empty
 	if body.AccessKeySecret != "" && body.AccessKeySecret != "******" && len(body.AccessKeySecret) > 0 {
 		// Only save unmasked secrets
 		if !strings.Contains(body.AccessKeySecret, "******") {
-			h.settingRepo.SetSetting("alibaba_access_key_secret", strings.TrimSpace(body.AccessKeySecret))
+			h.settingRepo.SetSetting("baidu_secret_key", strings.TrimSpace(body.AccessKeySecret))
 		}
 	}
 
@@ -99,19 +99,18 @@ func (h *SettingHandler) TestOCRAPI(c *fiber.Ctx) error {
 	}
 
 	// Read real (unmasked) credentials from DB
-	akID, _ := h.settingRepo.GetSetting("alibaba_access_key_id")
-	akSecret, _ := h.settingRepo.GetSetting("alibaba_access_key_secret")
+	akID, _ := h.settingRepo.GetSetting("baidu_api_key")
+	akSecret, _ := h.settingRepo.GetSetting("baidu_secret_key")
 
 	if akID == "" || akSecret == "" {
-		return c.JSON(fiber.Map{"success": false, "message": "未配置阿里云 OCR 凭证，请先保存 Access Key"})
+		return c.JSON(fiber.Map{"success": false, "message": "未配置百度云 OCR 凭证，请先保存 API Key"})
 	}
 
 	// Build multipart form
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
-	writer.WriteField("alibaba_access_key_id", akID)
-	writer.WriteField("alibaba_access_key_secret", akSecret)
-	writer.WriteField("alibaba_endpoint", "ocr-api.cn-hangzhou.aliyuncs.com")
+	writer.WriteField("baidu_api_key", akID)
+	writer.WriteField("baidu_secret_key", akSecret)
 	writer.Close()
 
 	req, err := http.NewRequest("POST", ocrURL+"/api/ocr/test", &buf)

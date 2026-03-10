@@ -263,13 +263,13 @@ export default function Dashboard({ user, onLogout }) {
                             ) : (
                                 <table className="doc-table">
                                     <thead>
-                                            <tr>
-                                                <th>标准号</th>
-                                                <th>标准名称</th>
-                                                <th>文件名</th>
-                                                <th>删除时间</th>
-                                                <th>操作</th>
-                                            </tr>
+                                        <tr>
+                                            <th>标准号</th>
+                                            <th>标准名称</th>
+                                            <th>文件名</th>
+                                            <th>删除时间</th>
+                                            <th>操作</th>
+                                        </tr>
                                     </thead>
                                     <tbody>
                                         {recycleBinDocs.map((doc) => (
@@ -604,8 +604,8 @@ function EditModal({ doc, standardTypes, engineeringTypes, onClose, onSuccess, o
 /* ─── 系统设置弹窗组件 ─── */
 function SettingsModal({ onClose, onSuccess, onError }) {
     const [form, setForm] = useState({
-        alibaba_access_key_id: '',
-        alibaba_access_key_secret: '',
+        baidu_api_key: '',
+        baidu_secret_key: '',
     });
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -619,8 +619,8 @@ function SettingsModal({ onClose, onSuccess, onError }) {
         settingsAPI.getOcr()
             .then(res => {
                 setForm({
-                    alibaba_access_key_id: res.data.alibaba_access_key_id || '',
-                    alibaba_access_key_secret: res.data.alibaba_access_key_secret || '',
+                    baidu_api_key: res.data.baidu_api_key || '',
+                    baidu_secret_key: res.data.baidu_secret_key || '',
                 });
             })
             .catch(() => {
@@ -673,26 +673,26 @@ function SettingsModal({ onClose, onSuccess, onError }) {
     return (
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640, width: '90vw' }}>
-                <div className="modal-title">系统设置 (阿里云 OCR 配置)</div>
+                <div className="modal-title">系统设置 (百度云 OCR 配置)</div>
                 {loading ? (
                     <div style={{ padding: '20px', textAlign: 'center' }}>加载中...</div>
                 ) : (
                     <>
                         <div className="form-group">
-                            <label>Access Key ID</label>
+                            <label>API Key</label>
                             <input
-                                placeholder="请输入阿里云 Access Key ID"
-                                value={form.alibaba_access_key_id}
-                                onChange={(e) => updateField('alibaba_access_key_id', e.target.value)}
+                                placeholder="请输入百度云 API Key"
+                                value={form.baidu_api_key}
+                                onChange={(e) => updateField('baidu_api_key', e.target.value)}
                             />
                         </div>
                         <div className="form-group">
-                            <label>Access Key Secret</label>
+                            <label>Secret Key</label>
                             <input
                                 type="password"
-                                placeholder="请输入阿里云 Access Key Secret"
-                                value={form.alibaba_access_key_secret}
-                                onChange={(e) => updateField('alibaba_access_key_secret', e.target.value)}
+                                placeholder="请输入百度云 Secret Key"
+                                value={form.baidu_secret_key}
+                                onChange={(e) => updateField('baidu_secret_key', e.target.value)}
                             />
                         </div>
 
@@ -718,7 +718,7 @@ function SettingsModal({ onClose, onSuccess, onError }) {
                         </div>
 
                         <p style={{ fontSize: '12px', color: '#666', marginBottom: '12px' }}>
-                            配置后，可在文档列表中手动点击"远程OCR"按钮，调用阿里云高精度 OCR (仅扫描首页) 进行识别纠错。不配置则只使用本地引擎。
+                            配置后，可在文档列表中手动点击"远程OCR"按钮，调用百度云高精度 OCR (仅扫描首页) 进行识别纠错。不配置则只使用本地引擎。
                         </p>
 
                         <div className="form-actions" style={{ marginBottom: 16 }}>

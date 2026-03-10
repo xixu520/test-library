@@ -53,7 +53,8 @@ var StandardTypes = []string{
 	"国家标准",
 	"行业标准",
 	"地方标准",
-	"团体/企业标准",
+	"团体标准",
+	"其他",
 }
 
 // EngineeringTypes enumerates the header tab categories.

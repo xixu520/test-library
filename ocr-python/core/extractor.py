@@ -14,11 +14,11 @@ import pdfplumber
 import pytesseract
 from PIL import Image
 
-# Import our alibaba integration (we will create this shortly)
+# Import our baidu integration
 try:
-    from core.alibaba_ocr import recognize_pdf_alibaba
+    from core.baidu_ocr import recognize_pdf_baidu
 except ImportError:
-    recognize_pdf_alibaba = None
+    recognize_pdf_baidu = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -97,17 +97,17 @@ def extract_date_after_keyword(text: str, *keywords: str) -> str:
 
 # ─── 标准号提取 ───────────────────────────────────────
 STANDARD_NUMBER_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"(GB/T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(GB\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(JGJ/T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(JGJ\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(JG/T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(JG[-\s]T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(JG\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(JC/T\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(CJJ\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(DB\d{2}/T?\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
-    re.compile(r"(T/\w+\s*\d+[\.\-]?\d*\s*[-—一]\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(GB/T\s*\d+[\.\-]?\d*\s*[-—一]+\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(GB\s*\d+[\.\-]?\d*\s*[-—一]+\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(JGJ/T\s*\d+[\.\-]?\d*\s*[-—一]+\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(JGJ\s*\d+[\.\-]?\d*\s*[-—一]+\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(JG/T\s*\d+[\.\-]?\d*\s*[-—一]+\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(JG[-\s]T\s*\d+[\.\-]?\d*\s*[-—一]+\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(JG\s*\d+[\.\-]?\d*\s*[-—一]+\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(JC/T\s*\d+[\.\-]?\d*\s*[-—一]+\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(CJJ\s*\d+[\.\-]?\d*\s*[-—一]+\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(DB\d{2}/T?\s*\d+[\.\-]?\d*\s*[-—一]+\s*\d{4})", re.IGNORECASE),
+    re.compile(r"(T/\w+\s*\d+[\.\-]?\d*\s*[-—一]+\s*\d{4})", re.IGNORECASE),
 ]
 
 
@@ -122,31 +122,58 @@ def extract_standard_number(text: str) -> tuple[str, str]:
             # 将 OCR 可能识别出的 JG-T 标准化为 JG/T
             std_num = re.sub(r'^JG[-\s]T', 'JG/T', std_num, flags=re.IGNORECASE)
             
-            # 尝试在标准号之后的几行内寻找中文标准名称
+            # 优化：收集可能的标准中文名称（由于标准名常跨行，需收集连续多个匹配行）
             suffix = text[match.end(1):]
             lines = suffix.split('\n')
-            for line in lines[:15]:
-                # 排除带有系统性说明的常见干扰词、出版机构名称和备案号等
-                # 增加对“发 布”中间带空格的处理，以及常见政府部门名称的屏蔽
+            collected_name_parts = []
+            
+            # 常见排除属性或干扰词
+            EXCLUDE_REGEX = re.compile(r"代替|发\s*布|实\s*施|ICS|UDC|页|ISO|总目录|备案号|UDC|中华人民共和国|建设部|总局|委员会|出版社|[\da-zA-Z]{10,}")
+            # 标准名称匹配正则：允许中文字符、数字（如 第5部分）、标点符号。
+            # 通常标准名称不应包含大量的连续英文字母（那是英文标题）
+            CHINESE_NAME_LINE_REGEX = re.compile(r"([\u4e00-\u9fa5\d\s：，第部分]{2,})")
+            ENGLISH_TITLE_REGEX = re.compile(r"^[a-zA-Z\s\-\.,:;()]{10,}$") # 识别英文标题
+
+            for line in lines[:20]: # Increase lookahead lines to account for more spacing
                 line_str = str(line).strip()
-                if len(line_str) > 2 and not re.search(r"代替|发\s*布|实\s*施|ICS|页|ISO|总目录|备案号|UDC|中华人民共和国|建设部|总局|委员会|出版社", line_str):
-                    # 如果该行包含中文字符（允许字符间有空格），并且中文字符占据主要部分，很可能就是标准名称
-                    # 避免匹配单独的一个字或者全是英文数字的行
-                    # ([\u4e00-\u9fa5]\s*){3,} 匹配至少三个中文字符，字符间可有空格
-                    if re.search(r"([\u4e00-\u9fa5]\s*){3,}", line_str):
-                        # 如果是“陶 瓷 砖 胶 粘 剂”这种形式，则去掉空格，使其标准化
-                        # 但如果空格较少，可能是标准名的一部分，这里采用简单的策略：
-                        # 如果空格很多且分布均匀，则认为是为了美观加的空格，予以剔除
-                        cleaned_name = line_str
-                        if ' ' in line_str:
-                            # 统计中文字符数和空格数
-                            han_chars = re.findall(r"[\u4e00-\u9fa5]", line_str)
-                            spaces = re.findall(r"\s+", line_str)
-                            if len(spaces) >= len(han_chars) - 1 and len(han_chars) > 0:
-                                # 几乎每个字之间都有空格，说明是分散对齐
-                                cleaned_name = re.sub(r"\s+", "", line_str)
-                        return std_num, cleaned_name
-            return std_num, ""
+                if not line_str:
+                    # Ignore empty lines instead of breaking. The collection will naturally terminate
+                    # when it hits an English line, publish date, or exclusion keyword.
+                    continue
+                
+                # 调整后的排除正则：更精准地匹配出版信息行
+                if EXCLUDE_REGEX.search(line_str) or re.search(r"^\d{4}-\d{2}-\d{2}", line_str):
+                    if collected_name_parts: break 
+                    continue
+                
+                # 2. 检查是否为英文标题（通常紧随中文标题之后）
+                if ENGLISH_TITLE_REGEX.match(line_str):
+                    if collected_name_parts: break # 遇到纯英文行，停止收集
+                    continue
+                
+                # 3. 核心判断：是否包含足够的中文字符或“第X部分”
+                if CHINESE_NAME_LINE_REGEX.search(line_str):
+                    # Replace hallucinated commas with spaces
+                    line_str = line_str.replace("，", " ").replace(",", " ")
+                    
+                    # 处理分散对齐的空格（如“陶 瓷 砖”）
+                    han_chars = re.findall(r"[\u4e00-\u9fa5]", line_str)
+                    spaces = re.findall(r"\s+", line_str)
+                    if len(spaces) >= len(han_chars) - 1 and len(han_chars) > 0:
+                        cleaned_part = re.sub(r"\s+", "", line_str)
+                    else:
+                        # 否则只压缩多个空格为一个
+                        cleaned_part = re.sub(r"\s+", " ", line_str)
+                    
+                    collected_name_parts.append(cleaned_part.strip())
+                elif collected_name_parts:
+                    # 如果已经开始收集了，遇到不符合标准的行且非空行，通常意味着标题结束
+                    break
+            
+            # Join with space to keep natural separation, then compress multiple spaces
+            final_name = " ".join(collected_name_parts).strip()
+            final_name = re.sub(r"\s+", " ", final_name)
+            return std_num, final_name
     return "", ""
 
 
@@ -155,8 +182,7 @@ def extract_from_pdf(
     pdf_path: str,
     use_remote: bool = False,
     ak_id: str = "",
-    ak_secret: str = "",
-    endpoint: str = "ocr-api.cn-hangzhou.aliyuncs.com"
+    ak_secret: str = ""
 ) -> dict:
     """
     从 PDF 文件提取文本和元数据。
@@ -195,13 +221,13 @@ def extract_from_pdf(
             local_doc_num, _ = extract_standard_number(full_text)
 
             # ---------------------------------------------------------
-            # 2. REMOTE ALIBABA OCR BRANCH (Fallback or Explicit)
+            # 2. REMOTE BAIDU OCR BRANCH (Fallback or Explicit)
             # ---------------------------------------------------------
             needs_remote = use_remote or (not local_doc_num)
             
-            if needs_remote and ak_id and ak_secret and recognize_pdf_alibaba:
+            if needs_remote and ak_id and ak_secret and recognize_pdf_baidu:
                 reason = "用户强制指定" if use_remote else "本地未能识别到标准号，自动回退"
-                logger.info("触发远程阿里云 OCR (%s)...", reason)
+                logger.info("触发远程百度云 OCR (%s)...", reason)
                 img = page.to_image(resolution=200).original
                 import tempfile
                 with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
@@ -209,12 +235,12 @@ def extract_from_pdf(
                     tmp_img_path = tmp_img.name
                 
                 try:
-                    remote_text = recognize_pdf_alibaba(tmp_img_path, ak_id, ak_secret, endpoint)
+                    remote_text = recognize_pdf_baidu(tmp_img_path, ak_id, ak_secret)
                     if remote_text:
                         full_text = remote_text  # 用远程结果覆盖本地结果
-                        logger.info("阿里云 OCR 提取成功")
+                        logger.info("百度云 OCR 提取成功")
                 except Exception as page_err:
-                    logger.warning("阿里云 OCR 处理失败: %s", page_err)
+                    logger.warning("百度云 OCR 处理失败: %s", page_err)
                 finally:
                     if os.path.exists(tmp_img_path):
                         os.remove(tmp_img_path)
