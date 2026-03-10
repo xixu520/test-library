@@ -146,17 +146,31 @@ def verify_document(
 
     except requests.Timeout:
         result.status = "failed"
-        result.message = "查询超时: f.csres.com 响应超时"
+        result.message = "网站访问超时: 目标服务器未在规定时间内响应"
         logger.error("核验超时: %s", search_query)
+        
+    except requests.ConnectionError:
+        result.status = "failed"
+        result.message = "网站连接失败: 无法连接到核验服务器，可能是网络中断或被封禁"
+        logger.error("核验连接错误: %s", search_query)
+
+    except requests.HTTPError as e:
+        result.status = "failed"
+        status_code = e.response.status_code if e.response else "Unknown"
+        if status_code in (403, 404):
+            result.message = f"网站访问被拒绝或限制 (HTTP {status_code}): 可能是防爬虫封禁"
+        else:
+            result.message = f"网站返回异常状态码 (HTTP {status_code})"
+        logger.error("核验 HTTP 错误 (%s): %s", search_query, e)
 
     except requests.RequestException as e:
         result.status = "failed"
-        result.message = f"网络请求失败: {str(e)}"
+        result.message = f"网络请求发生未知错误: {str(e)}"
         logger.error("核验网络错误 (%s): %s", search_query, e)
 
     except Exception as e:
         result.status = "failed"
-        result.message = f"核验过程异常: {str(e)}"
+        result.message = f"核验过程发生内部异常: {str(e)}"
         logger.error("核验异常 (%s): %s", search_query, e)
 
     return result

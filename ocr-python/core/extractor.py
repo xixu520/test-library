@@ -173,10 +173,35 @@ def extract_from_pdf(
             page = pdf.pages[0]
 
             # ---------------------------------------------------------
-            # REMOTE ALIBABA OCR BRANCH
+            # 1. LOCAL EXTRACTION (First Priority)
             # ---------------------------------------------------------
-            if use_remote and ak_id and ak_secret and recognize_pdf_alibaba:
-                logger.info("正在使用阿里云 OCR 处理文档首页...")
+            logger.info("正在使用本地提取策略处理文档首页...")
+            text_plumber = page.extract_text() or ""
+            
+            has_chinese = any('\u4e00' <= char <= '\u9fa5' for char in text_plumber)
+            if len(text_plumber.strip()) > 50 and has_chinese:
+                full_text = text_plumber
+            else:
+                logger.info("PDFPlumber 提取文本过少或无中文，开启本地 Tesseract OCR...")
+                try:
+                    img = page.to_image(resolution=300).original
+                    text_ocr = pytesseract.image_to_string(img, lang="chi_sim+eng")
+                    full_text = text_plumber + "\n" + text_ocr
+                except Exception as py_e:
+                    logger.error("本地 Tesseract 失败: %s", py_e)
+                    full_text = text_plumber
+            
+            # 快速检查本地是否提取到了标准号
+            local_doc_num, _ = extract_standard_number(full_text)
+
+            # ---------------------------------------------------------
+            # 2. REMOTE ALIBABA OCR BRANCH (Fallback or Explicit)
+            # ---------------------------------------------------------
+            needs_remote = use_remote or (not local_doc_num)
+            
+            if needs_remote and ak_id and ak_secret and recognize_pdf_alibaba:
+                reason = "用户强制指定" if use_remote else "本地未能识别到标准号，自动回退"
+                logger.info("触发远程阿里云 OCR (%s)...", reason)
                 img = page.to_image(resolution=200).original
                 import tempfile
                 with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
@@ -184,30 +209,15 @@ def extract_from_pdf(
                     tmp_img_path = tmp_img.name
                 
                 try:
-                    full_text = recognize_pdf_alibaba(tmp_img_path, ak_id, ak_secret, endpoint)
-                    logger.info("阿里云 OCR 提取成功")
+                    remote_text = recognize_pdf_alibaba(tmp_img_path, ak_id, ak_secret, endpoint)
+                    if remote_text:
+                        full_text = remote_text  # 用远程结果覆盖本地结果
+                        logger.info("阿里云 OCR 提取成功")
                 except Exception as page_err:
                     logger.warning("阿里云 OCR 处理失败: %s", page_err)
-                    # 回退到下面的本地逻辑？ 为了简单，如果失败就让 full_text 为空，后面会被拦截
-                    full_text = ""
                 finally:
-                    os.remove(tmp_img_path)
-            
-            # ---------------------------------------------------------
-            # LOCAL TESSERACT OCR BRANCH (Or Remote Fallback)
-            # ---------------------------------------------------------
-            if not full_text:
-                logger.info("正在使用本地 OCR/提取策略 处理文档首页...")
-                text_plumber = page.extract_text() or ""
-                
-                has_chinese = any('\u4e00' <= char <= '\u9fa5' for char in text_plumber)
-                if len(text_plumber.strip()) > 50 and has_chinese:
-                    full_text = text_plumber
-                else:
-                    logger.info("PDFPlumber 提取文本过少或无中文，开启本地 OCR 兜底...")
-                    img = page.to_image(resolution=300).original
-                    text_ocr = pytesseract.image_to_string(img, lang="chi_sim+eng")
-                    full_text = text_plumber + "\n" + text_ocr
+                    if os.path.exists(tmp_img_path):
+                        os.remove(tmp_img_path)
 
     except Exception as e:
         logger.error("PDF 打开失败 (%s): %s", pdf_path, e)
